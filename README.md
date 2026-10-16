@@ -1,37 +1,88 @@
 # FilePanel
 
-首次克隆后，将 `TEST_ENVIRONMENT.example.md` 复制为 `TEST_ENVIRONMENT.md`，再填写本机测试环境。后者已被 Git 忽略；不要强制提交密码、私钥或令牌。所有任务要求的测试环境必读入口均指向这份本地文件。
+**English** | [**简体中文**](README.zh-CN.md)
 
-面向个人 VPS 和 NAT 小鸡的轻量文件托管、发布与多节点分发面板。一台机器即可完成上传、存储、分享和下载，额外节点按需扩展存储或下载线路。
+A lightweight single-admin file hosting and publishing panel for personal VPS instances and NAT servers. The current implementation uses one Go binary with embedded web assets and SQLite; extra storage and download nodes are planned.
 
-**执行入口：[tasks/README.md](tasks/README.md)，这是唯一活跃任务状态索引。** 每位 Coding Agent 默认只读自己的静态任务文件、索引中的依赖行与指定源码；无需重新阅读整套设计文档。任务完成只更新该索引，不给任务文件追加交接日志，也不逐任务同步旧规划文档。
+## Features and scope
 
-以下设计文档记录初稿整理时的方案基线，当时尚无应用代码、安装脚本或可运行版本。来源为聊天“轻量文件分发面板”，并纳入 2026-10-15 的页面参考替换与本机卸载影响要求；接口、默认值与部署目录须结合任务契约和真实代码理解，不能作为已实现功能或实测结果。
+- Private-by-default uploads, streaming size/SHA-256 validation, downloads, renaming and deletion.
+- Public resource pages, opt-in home-page listings, revocable download authorization, Range requests and persistent traffic accounting/protection.
+- Site branding with images and colors, plus versioned ZIP export and isolated preview/confirmation before import.
+- A Chinese administration interface at `/admin`, public home page at `/` and resource pages at `/s/{slug}`.
 
-## 产品原则
+The [execution index](tasks/README.md) is the only task-status source. Domain/HTTPS setup, optional nodes, cross-node moves, installers, updates and release acceptance remain future work. This is a development snapshot with no tagged release or production-readiness claim.
 
-- 单机完整可用，主面板自带本机存储、下载、公开页面和保护能力。
-- 节点可选，文件存储位置与下载出口分别设置。
-- 安装尽量只用一次终端，之后主要通过中文网页管理。
-- 上传默认私有，分享和主页展示由管理员主动开启。
-- 默认提供流量与磁盘保护，界面直接说明限制和下一步操作。
-- 只维护一套官方页面样式，允许内容和品牌个性化。
+## Quick start
 
-## 文档入口
+Install Go 1.26 or newer. Node.js, Docker and an external database are not required. From the repository root:
 
-| 文档 | 主要用途 |
+```sh
+git clone https://github.com/BFRKQSB7/FilePanel.git
+cd FilePanel
+go mod download
+go build -trimpath -o filepanel ./cmd/filepanel
+./filepanel init-token --data-dir ./data
+./filepanel serve --data-dir ./data --listen 127.0.0.1:8080
+```
+
+On Windows, build with `go build -trimpath -o filepanel.exe ./cmd/filepanel` and use `./filepanel.exe` for both commands. Open `http://127.0.0.1:8080/admin`, enter the one-time token, set an administrator password of 12–72 bytes, then log in. The token is displayed once and expires after 30 minutes; initialize before publishing the service. Use the same data directory for both commands, and stop the server before issuing a replacement initialization token.
+
+The default listener is local to the machine. For remote development, use an SSH tunnel. The server has no built-in TLS yet; configure an HTTPS reverse proxy before exposing administration sessions over an untrusted network, and enable secure cookies below.
+
+## Configuration
+
+| Flag / environment variable | Default | Purpose |
+| --- | --- | --- |
+| `--data-dir` / `FILEPANEL_DATA` | `./data` | SQLite, files, assets and runtime state; relative to the working directory |
+| `--listen` / `FILEPANEL_LISTEN` | `127.0.0.1:8080` | HTTP listener for `serve` |
+| `--secure-cookie` / `FILEPANEL_SECURE_COOKIE` | `false` | Enable behind an HTTPS reverse proxy; requires HTTPS in the browser |
+
+Explicit flags override environment defaults. Uploads currently have a 10 GiB per-file ceiling and a fixed 1 GiB disk reserve. The reserve blocks writes on a 1 GB disk; adapting it is a known release prerequisite. An unknown traffic quota does not establish a total traffic cap.
+
+The intended first-release platforms are Alpine/OpenRC and Debian/systemd. Cross-compilation does not verify service lifecycles, NAT access or the 128 MB RAM / 1 GB disk target. Current evidence and gaps live in the execution index.
+
+## Development and verification
+
+Read [AGENTS.md](AGENTS.md), the relevant task file and index rows before working. Copy `TEST_ENVIRONMENT.example.md` to `TEST_ENVIRONMENT.md` only if no local copy exists, then read it for the current test contract. This local file is Git-ignored; credentials, private keys, runtime data and binaries must stay out of commits and release archives.
+
+```sh
+go mod verify
+go vet ./...
+go test -count=1 ./...
+go build ./...
+```
+
+The [CI workflow](.github/workflows/ci.yml) checks formatting, dependency integrity, vet, tests and builds on Linux and Windows, adds Linux race testing, and cross-compiles CGO-free Linux amd64/arm64 binaries. Hosted-runner checks do not replace deployment or resource acceptance. See [维护文档.md](维护文档.md) for the code map and publication procedure.
+
+## Repository and design documents
+
+| Path | Purpose |
 | --- | --- |
-| [需求与范围](docs/01-需求与范围.md) | 产品定位、功能清单、第一版边界 |
-| [架构与数据设计](docs/02-架构与数据设计.md) | 单机与节点、数据模型、传输与调度规则 |
-| [页面与视觉规范](docs/03-页面与视觉规范.md) | MeowVPS 新参考、前后台结构、交互状态 |
-| [部署与运行设计](docs/04-部署与运行设计.md) | 安装、域名、NAT、更新、备份与卸载 |
-| [开发计划与验收](docs/05-开发计划与验收.md) | 阶段交付、可执行验收场景、验证边界 |
-| [来源与设计决策](docs/06-来源与设计决策.md) | 聊天依据、草案建议、未定事项及变更记录 |
+| `cmd/filepanel/` | CLI, initialization and server lifecycle |
+| `internal/` | Authentication, storage, files, publishing, downloads, usage and branding |
+| `migrations/` | Embedded SQLite migrations |
+| `tasks/` | Static task contracts and the sole active execution index |
+| `docs/` | Original design baseline and visual reference |
+| `TEST_ENVIRONMENT.example.md` | Sanitized local test-environment template |
 
-建议先阅读需求与范围，再看页面规范和架构设计。继续开发时，以需求编号追踪实现和验收；调整重要规则时同步更新来源与设计决策。
+The design documents are a baseline rather than evidence of implemented behavior:
 
-## 页面参考
+- [Requirements and scope](docs/01-需求与范围.md)
+- [Architecture and data](docs/02-架构与数据设计.md)
+- [Pages and visual guidance](docs/03-页面与视觉规范.md)
+- [Deployment and operations](docs/04-部署与运行设计.md)
+- [Development and acceptance](docs/05-开发计划与验收.md)
+- [Sources and design decisions](docs/06-来源与设计决策.md)
 
-**当前参考为 [MeowVPS Blog](https://meowvps.com/blog/) 和用户本次提供的截图，已替换原聊天的旧图。** 首页采用居中内容区、横幅、双列内容卡片、充分留白与蓝紫强调色；内容转化为文件资源发布，不引入参考站的博客分类、工具站或账号体系。
+## License
 
-截图与具体适配说明见[页面与视觉规范](docs/03-页面与视觉规范.md)。本次只生成文档，没有实现或运行网页。
+No open-source license has been selected. All rights are reserved; see [LICENSE](LICENSE). Third-party dependencies retain their own licenses.
+
+## Acknowledgments
+
+The visual direction references [MeowVPS Blog](https://meowvps.com/blog/); the supplied reference image is retained under `docs/assets/` for design discussion. Referenced branding and artwork belong to their respective owners. FilePanel uses Go, [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), and the Go `x/crypto` and `x/sys` packages.
+
+## Responsible use
+
+Host only content you are authorized to distribute, protect administrator credentials and keep independent backups. Evaluate this development snapshot against your deployment and data-safety requirements before use.
