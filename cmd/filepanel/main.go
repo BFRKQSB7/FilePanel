@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"filepanel/internal/access"
 	"filepanel/internal/auth"
 	"filepanel/internal/files"
 	"filepanel/internal/store"
@@ -98,6 +100,9 @@ func serve(args []string) error {
 	dataDir := flags.String("data-dir", envOr("FILEPANEL_DATA", "./data"), "受控数据目录")
 	listen := flags.String("listen", envOr("FILEPANEL_LISTEN", "127.0.0.1:8080"), "HTTP 监听地址")
 	secureCookie := flags.Bool("secure-cookie", strings.EqualFold(os.Getenv("FILEPANEL_SECURE_COOKIE"), "true"), "在 TLS 反向代理后强制 Secure Cookie")
+	tlsListen := flags.String("tls-listen", envOr("FILEPANEL_TLS_LISTEN", ":443"), "自动证书 TLS 监听；仅启用自动 HTTPS 时绑定，可使用高位端口")
+	challengeListen := flags.String("challenge-listen", envOr("FILEPANEL_CHALLENGE_LISTEN", ":80"), "HTTP-01 挑战监听；公网必须通过 80 转入")
+	staging := flags.Bool("acme-staging", false, "使用 Let's Encrypt staging；只验证流程，不切换主入口")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -123,21 +128,32 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps, err := web.Build(s, a, manager)
+	opts := access.Options{Listen: *listen, TLSListen: *tlsListen, ChallengeListen: *challengeListen}
+	if *staging {
+		opts.DirectoryURL = access.StagingDirectory
+	}
+	deps, err := web.Build(s, a, manager, opts)
 	if err != nil {
 		return err
 	}
+	defer deps.Access.Close()
+	handler := web.NewServer(deps, *secureCookie)
 	server := &http.Server{
 		Addr:              *listen,
-		Handler:           web.NewServer(deps, *secureCookie),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
+	listener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		return err
+	}
+	deps.Access.Start(handler)
 	serverErrors := make(chan error, 1)
 	go func() {
 		slog.Info("FilePanel 正在监听", "address", *listen, "data_dir", root)
-		serverErrors <- server.ListenAndServe()
+		serverErrors <- server.Serve(listener)
 	}()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

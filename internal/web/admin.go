@@ -35,6 +35,7 @@ type shareView struct {
 	share.Share
 	Assets  []share.Asset `json:"assets"`
 	Preview string        `json:"preview"`
+	URL     string        `json:"url"`
 }
 
 func (s *Server) shareView(fileID string) (shareView, error) {
@@ -46,7 +47,7 @@ func (s *Server) shareView(fileID string) (shareView, error) {
 	if err != nil {
 		return shareView{}, err
 	}
-	return shareView{Share: sh, Assets: list, Preview: share.RenderMarkdown(sh.Markdown, s.shares.AssetOwned(fileID))}, nil
+	return shareView{Share: sh, Assets: list, Preview: share.RenderMarkdown(sh.Markdown, s.shares.AssetOwned(fileID)), URL: s.entryURL("/s/" + sh.Slug)}, nil
 }
 
 func (s *Server) shareError(w http.ResponseWriter, err error) {

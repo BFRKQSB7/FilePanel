@@ -19,15 +19,15 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 	"size": formatSize,
 	"add":  func(a, b int) int { return a + b },
 }).Parse(`
-{{define "head"}}<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="referrer" content="no-referrer"><title>{{.Title}}</title><style>{{.CSS}}</style></head><body>
-<header class="top"><div class="top-in"><a class="brand" href="/">{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{else}}<span class="mark">{{.Mark}}</span>{{end}}{{.Brand}}</a><form class="search" action="/" method="get" role="search"><input name="q" value="{{.Query}}" placeholder="搜索资源" aria-label="搜索资源" maxlength="80"><button class="btn" type="submit">搜索</button></form></div></header><main class="wrap">{{end}}
+{{define "head"}}<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="referrer" content="no-referrer"><title>{{.Title}}</title>{{if .Canonical}}<link rel="canonical" href="{{.Canonical}}">{{end}}<style>{{.CSS}}</style></head><body>
+<header class="top"><div class="top-in"><a class="brand" href="{{.Base}}/">{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{else}}<span class="mark">{{.Mark}}</span>{{end}}{{.Brand}}</a><form class="search" action="{{.Base}}/" method="get" role="search"><input name="q" value="{{.Query}}" placeholder="搜索资源" aria-label="搜索资源" maxlength="80"><button class="btn" type="submit">搜索</button></form></div></header><main class="wrap">{{end}}
 {{define "foot"}}</main><footer class="foot">{{.Footer}}</footer></body></html>{{end}}
 {{define "home"}}{{template "head" .}}
 <section class="hero"><h1>资源下载</h1><p>{{.Intro}}</p></section>
 {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
-{{if .Items}}<div class="grid">{{range .Items}}<a class="card" href="/s/{{.Slug}}"><div class="cover">{{if .Cover}}<img src="/a/{{.Cover}}" alt="" loading="lazy">{{else}}▤{{end}}</div><div class="card-body"><h2>{{.Name}}</h2>{{if .Summary}}<p>{{.Summary}}</p>{{end}}<div class="meta">{{if .Version}}<span class="tag">{{.Version}}</span>{{end}}<span>{{size .Size}}</span></div></div></a>{{end}}</div>
+{{if .Items}}<div class="grid">{{range .Items}}<a class="card" href="{{$.Base}}/s/{{.Slug}}"><div class="cover">{{if .Cover}}<img src="/a/{{.Cover}}" alt="" loading="lazy">{{else}}▤{{end}}</div><div class="card-body"><h2>{{.Name}}</h2>{{if .Summary}}<p>{{.Summary}}</p>{{end}}<div class="meta">{{if .Version}}<span class="tag">{{.Version}}</span>{{end}}<span>{{size .Size}}</span></div></div></a>{{end}}</div>
 {{if or .Prev .Next}}<nav class="pager" aria-label="分页">{{if .Prev}}<a class="btn ghost" href="{{.Prev}}">上一页</a>{{end}}<span>第 {{.Page}} / {{.Pages}} 页</span>{{if .Next}}<a class="btn ghost" href="{{.Next}}">下一页</a>{{end}}</nav>{{end}}
-{{else if .Query}}<div class="empty"><strong>没有找到匹配的资源</strong>换个关键词试试，或 <a href="/">查看全部资源</a>。</div>
+{{else if .Query}}<div class="empty"><strong>没有找到匹配的资源</strong>换个关键词试试，或 <a href="{{.Base}}/">查看全部资源</a>。</div>
 {{else}}<div class="empty"><strong>这里还没有公开资源</strong>管理员发布资源后会显示在这里。</div>{{end}}
 {{template "foot" .}}{{end}}
 {{define "share"}}{{template "head" .}}
@@ -35,7 +35,7 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 {{if .Summary}}<p>{{.Summary}}</p>{{end}}
 {{if .Cover}}<div class="banner"><img src="/a/{{.Cover}}" alt="{{.Name}} 封面"></div>{{end}}
 {{if .Notice}}<div class="notice {{if .NoticeErr}}err{{end}}" role="status">{{.Notice}}</div>{{end}}
-<div class="dl"><a class="btn big" href="/s/{{.Slug}}/get" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 下载链接 5 分钟内有效</small></div></div>
+<div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 下载链接 5 分钟内有效</small></div></div>
 {{if .Shots}}<div class="shots">{{range .Shots}}<img src="/a/{{.}}" alt="截图" loading="lazy">{{end}}</div>{{end}}
 {{if .Body}}<div class="md">{{.Body}}</div>{{end}}
 <dl class="facts"><dt>文件名</dt><dd>{{.FileName}}</dd><dt>大小</dt><dd>{{size .Size}}</dd><dt>SHA-256</dt><dd>{{.SHA}}</dd></dl></article>
@@ -51,6 +51,7 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 `))
 
 type page struct {
+	Base, Canonical                          string
 	Title, Brand, Mark, Query, Intro, Footer string
 	Logo                                     template.URL // 仅来自 profile.safeURL 白名单（/site/… 或位图 data URL）
 	CSS                                      template.CSS
@@ -60,7 +61,11 @@ type page struct {
 
 // newPage 套用站点个性化：品牌、Logo、简介、页脚与主题 CSS 都来自已校验的配置。
 func (s *Server) newPage(title, query string) page {
-	return pageFor(s.profile.View(), title, query)
+	p := pageFor(s.profile.View(), title, query)
+	if s.access != nil {
+		p.Base = s.access.BaseURL()
+	}
+	return p
 }
 
 func pageFor(v profile.View, title, query string) page {
@@ -171,6 +176,9 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		Page, Pages int
 		Prev, Next  string
 	}{page: s.newPage("资源下载", query), Page: pageNo, Pages: pages}
+	if data.Base != "" {
+		data.Canonical = s.entryURL("/")
+	}
 	for _, it := range items {
 		data.Items = append(data.Items, card{Slug: it.Slug, Name: displayName(it), Summary: it.Summary, Version: it.Version, Cover: it.CoverAsset, Size: it.Size})
 	}
@@ -211,6 +219,9 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		CanDownload                                                bool
 	}{page: s.newPage(displayName(sh), ""), Slug: sh.Slug, Name: displayName(sh), Version: sh.Version, Summary: sh.Summary,
 		Cover: sh.CoverAsset, Button: sh.ButtonText, FileName: sh.FileName, SHA: sh.SHA256, Size: sh.Size}
+	if data.Base != "" {
+		data.Canonical = s.entryURL("/s/" + sh.Slug)
+	}
 	if data.Button == "" { // 单资源按钮文字优先；未设置时使用全站默认
 		data.Button = s.profile.View().ButtonText
 	}
@@ -240,7 +251,7 @@ func (s *Server) getLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token, _ := s.dl.Issue(download.Claims{File: sh.FileID, SHA: sh.SHA256, AuthVersion: sh.AuthVersion, Scope: "public", IP: ip})
-	http.Redirect(w, r, "/d/"+url.PathEscape(sh.FileID)+"?t="+url.QueryEscape(token), http.StatusFound)
+	http.Redirect(w, r, s.entryURL("/d/"+url.PathEscape(sh.FileID)+"?t="+url.QueryEscape(token)), http.StatusFound)
 }
 
 func downloadError(err error) *download.Error {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 
+	"filepanel/internal/access"
 	"filepanel/internal/auth"
 	"filepanel/internal/download"
 	"filepanel/internal/files"
@@ -19,7 +20,7 @@ import (
 	"filepanel/internal/usage"
 )
 
-//go:embed index.html admin-ext.js
+//go:embed index.html admin-ext.js access.js
 var assets embed.FS
 
 type Server struct {
@@ -30,6 +31,7 @@ type Server struct {
 	profile *profile.Manager
 	meter   *usage.Meter
 	dl      *download.Service
+	access  *access.Manager
 	secure  bool
 	dataDir string
 }
@@ -43,10 +45,11 @@ type Deps struct {
 	Profile  *profile.Manager
 	Meter    *usage.Meter
 	Download *download.Service
+	Access   *access.Manager
 }
 
 // Build 用默认配置装配分享、计量与下载服务。
-func Build(s *store.Store, a *auth.Auth, f *files.Manager) (Deps, error) {
+func Build(s *store.Store, a *auth.Auth, f *files.Manager, options ...access.Options) (Deps, error) {
 	shares, err := share.New(s, f)
 	if err != nil {
 		return Deps{}, err
@@ -63,7 +66,15 @@ func Build(s *store.Store, a *auth.Auth, f *files.Manager) (Deps, error) {
 	if err != nil {
 		return Deps{}, err
 	}
-	return Deps{Store: s, Auth: a, Files: f, Shares: shares, Profile: prof, Meter: meter, Download: dl}, nil
+	var opts access.Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	entry, err := access.New(s, f, opts)
+	if err != nil {
+		return Deps{}, err
+	}
+	return Deps{Store: s, Auth: a, Files: f, Shares: shares, Profile: prof, Meter: meter, Download: dl, Access: entry}, nil
 }
 
 // New 使用默认依赖创建处理器，装配失败时 panic，仅用于测试；服务入口使用 Build + NewServer。
@@ -76,7 +87,7 @@ func New(s *store.Store, a *auth.Auth, f *files.Manager, secure bool) http.Handl
 }
 
 func NewServer(d Deps, secure bool) http.Handler {
-	server := &Server{store: d.Store, auth: d.Auth, files: d.Files, shares: d.Shares, profile: d.Profile, meter: d.Meter, dl: d.Download, secure: secure, dataDir: d.Files.DataDir()}
+	server := &Server{store: d.Store, auth: d.Auth, files: d.Files, shares: d.Shares, profile: d.Profile, meter: d.Meter, dl: d.Download, access: d.Access, secure: secure, dataDir: d.Files.DataDir()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", server.home)
 	mux.HandleFunc("GET /s/{slug}", server.sharePage)
@@ -87,6 +98,7 @@ func NewServer(d Deps, secure bool) http.Handler {
 	mux.HandleFunc("GET /admin-ext.js", server.adminScript)
 	server.adminRoutes(mux)
 	server.profileRoutes(mux)
+	server.accessRoutes(mux)
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /api/status", server.status)
 	mux.HandleFunc("POST /api/init", server.initialize)
@@ -173,7 +185,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	auth.SessionCookie(w, token, s.secure || r.TLS != nil)
+	auth.SessionCookie(w, token, s.requestSecure(r))
 	writeJSON(w, http.StatusOK, map[string]string{"csrf": csrf})
 }
 
@@ -185,7 +197,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "退出失败")
 		return
 	}
-	auth.ClearCookie(w, s.secure || r.TLS != nil)
+	auth.ClearCookie(w, s.requestSecure(r))
 	writeJSON(w, http.StatusOK, map[string]string{"message": "已退出"})
 }
 
@@ -204,7 +216,7 @@ func (s *Server) password(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	auth.ClearCookie(w, s.secure || r.TLS != nil)
+	auth.ClearCookie(w, s.requestSecure(r))
 	writeJSON(w, http.StatusOK, map[string]string{"message": "密码已更新，请重新登录"})
 }
 

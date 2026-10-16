@@ -61,7 +61,7 @@ async function openShare(item) {
     catch (err) { FP.toast(err.message); }
   } });
 
-  const link = el('input', { readonly: true, value: location.origin + '/s/' + view.slug, 'aria-label': '稳定分享链接' });
+  const link = el('input', { readonly: true, value: view.url.startsWith('/') ? location.origin + view.url : view.url, 'aria-label': '稳定分享链接' });
   const save = el('button', { type: 'button', class: 'primary-btn', text: '保存' });
   const modal = el('div', { class: 'modal', style: 'width:min(640px,100%);max-height:92vh;overflow:auto', role: 'dialog', 'aria-modal': 'true', 'aria-label': '分享设置' },
     el('h2', { text: '分享与展示 · ' + view.file_name }),

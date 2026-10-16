@@ -138,3 +138,23 @@ func ClientIP(r *http.Request, cfg usage.Config) string {
 	}
 	return remote.String()
 }
+
+// TrustedRemote checks the immediate TCP peer, never a forwarded header.
+func TrustedRemote(r *http.Request, cfg usage.Config) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	a, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	for _, item := range cfg.TrustedProxies {
+		p, err := usage.ParseProxy(item)
+		if err == nil && p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
