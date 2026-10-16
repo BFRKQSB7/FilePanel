@@ -235,8 +235,8 @@ func TestActiveResponseStopsWithinBoundAfterRevocation(t *testing.T) {
 	// 2) 立即撤销路径（管理员关闭分享时调用 Revoke）。
 	sh2 := e.publish(item.ID, "big", true)
 	url = srv.URL + "/d/" + item.ID + "?t=" + e.token(sh2, "127.0.0.1")
+	e.deps.Download.RenewEvery = time.Hour // 启动响应前配置，排除周期校验且避免与监控协程竞争
 	_, rest = stalledDownload(t, url)
-	e.deps.Download.RenewEvery = time.Hour // 排除周期校验，单独验证即时撤销
 	_ = e.deps.Shares.Revoke(item.ID)
 	if n := e.deps.Download.Revoke(item.ID); n < 1 {
 		t.Fatalf("Revoke hit %d leases", n)
