@@ -14,13 +14,14 @@ import (
 	"filepanel/internal/auth"
 	"filepanel/internal/download"
 	"filepanel/internal/files"
+	"filepanel/internal/nodes"
 	"filepanel/internal/profile"
 	"filepanel/internal/share"
 	"filepanel/internal/store"
 	"filepanel/internal/usage"
 )
 
-//go:embed index.html admin-ext.js access.js
+//go:embed index.html admin-ext.js access.js nodes.js
 var assets embed.FS
 
 type Server struct {
@@ -32,6 +33,7 @@ type Server struct {
 	meter   *usage.Meter
 	dl      *download.Service
 	access  *access.Manager
+	nodes   *nodes.Panel
 	secure  bool
 	dataDir string
 }
@@ -46,6 +48,7 @@ type Deps struct {
 	Meter    *usage.Meter
 	Download *download.Service
 	Access   *access.Manager
+	Nodes    *nodes.Panel
 }
 
 // Build 用默认配置装配分享、计量与下载服务。
@@ -74,7 +77,11 @@ func Build(s *store.Store, a *auth.Auth, f *files.Manager, options ...access.Opt
 	if err != nil {
 		return Deps{}, err
 	}
-	return Deps{Store: s, Auth: a, Files: f, Shares: shares, Profile: prof, Meter: meter, Download: dl, Access: entry}, nil
+	peers, err := nodes.NewPanel(s, f, shares, a, meter, dl)
+	if err != nil {
+		return Deps{}, err
+	}
+	return Deps{Store: s, Auth: a, Files: f, Shares: shares, Profile: prof, Meter: meter, Download: dl, Access: entry, Nodes: peers}, nil
 }
 
 // New 使用默认依赖创建处理器，装配失败时 panic，仅用于测试；服务入口使用 Build + NewServer。
@@ -88,6 +95,7 @@ func New(s *store.Store, a *auth.Auth, f *files.Manager, secure bool) http.Handl
 
 func NewServer(d Deps, secure bool) http.Handler {
 	server := &Server{store: d.Store, auth: d.Auth, files: d.Files, shares: d.Shares, profile: d.Profile, meter: d.Meter, dl: d.Download, access: d.Access, secure: secure, dataDir: d.Files.DataDir()}
+	server.nodes = d.Nodes
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", server.home)
 	mux.HandleFunc("GET /s/{slug}", server.sharePage)
@@ -99,6 +107,7 @@ func NewServer(d Deps, secure bool) http.Handler {
 	server.adminRoutes(mux)
 	server.profileRoutes(mux)
 	server.accessRoutes(mux)
+	server.nodeRoutes(mux)
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /api/status", server.status)
 	mux.HandleFunc("POST /api/init", server.initialize)
@@ -276,7 +285,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		// Validate the remainder while the object is still temporary. A rejected
 		// request must never leave a committed (or recoverable verified) file.
 		counted := &countingReader{r: part}
-		result, err := s.files.UploadChecked(r.Context(), part.FileName(), -1, counted, func() error {
+		validate := func() error {
 			for {
 				next, err := reader.NextPart()
 				if errors.Is(err, io.EOF) {
@@ -292,9 +301,18 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 					return err
 				}
 			}
-		})
+		}
+		var result files.Item
+		target := r.URL.Query().Get("storage")
+		if target != "" && s.nodes != nil {
+			result, err = s.nodes.Upload(r.Context(), target, part.FileName(), auth.Cookie(r), counted, validate)
+		} else {
+			result, err = s.files.UploadChecked(r.Context(), part.FileName(), -1, counted, validate)
+		}
 		_ = part.Close()
-		_ = s.meter.RecordReceived(usage.CategoryUpload, counted.n)
+		if target == "" {
+			_ = s.meter.RecordReceived(usage.CategoryUpload, counted.n)
+		}
 		if err != nil {
 			status := http.StatusBadRequest
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -314,6 +332,9 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	if s.remoteAdmin(w, r) {
 		return
 	}
 	// 管理员下载同样走受控出口：Range、租约与用量计量一并生效，不能静默绕过额度。
@@ -363,7 +384,13 @@ func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dl.Revoke(id)
 	s.shares.RemoveFileAssets(id)
-	if err := s.files.Remove(id); err != nil {
+	var err error
+	if s.nodes != nil {
+		err = s.nodes.Delete(r.Context(), id)
+	} else {
+		err = s.files.Remove(id)
+	}
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "删除失败："+err.Error())
 		return
 	}

@@ -25,11 +25,12 @@ const defaultReserve uint64 = 1 << 30
 const chunkSize = 64 << 10
 
 type Item struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Size      int64  `json:"size"`
-	SHA256    string `json:"sha256"`
-	CreatedAt int64  `json:"created_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Size        int64  `json:"size"`
+	SHA256      string `json:"sha256"`
+	CreatedAt   int64  `json:"created_at"`
+	StorageNode string `json:"storage_node,omitempty"`
 }
 
 type Manager struct {
@@ -143,16 +144,30 @@ func (m *Manager) Upload(ctx context.Context, name string, expected int64, src i
 // UploadChecked validates the enclosing request before marking any bytes as
 // verified. An error leaves only a failed upload, never a file recovery can publish.
 func (m *Manager) UploadChecked(ctx context.Context, name string, expected int64, src io.Reader, check func() error) (item Item, err error) {
+	id, err := randomID()
+	if err != nil {
+		return item, err
+	}
+	return m.UploadID(ctx, id, name, expected, src, check)
+}
+
+// UploadID allows an authenticated transfer to use a stable, opaque object ID.
+// The caller serializes retries; existing uploads are never silently replaced.
+func (m *Manager) UploadID(ctx context.Context, id, name string, expected int64, src io.Reader, check func() error) (item Item, err error) {
+	if len(id) < 24 || len(id) > 64 || strings.ContainsAny(id, "/\\.") {
+		return item, errors.New("无效对象 ID")
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return item, errors.New("无效对象 ID")
+		}
+	}
 	name, err = cleanName(name)
 	if err != nil {
 		return item, err
 	}
 	if expected > m.maxUpload {
 		return item, errors.New("文件超过单文件大小上限")
-	}
-	id, err := randomID()
-	if err != nil {
-		return item, err
 	}
 	objKey := id
 	tempKey := id + ".part"
@@ -307,6 +322,9 @@ func (m *Manager) Open(id string) (Item, *ReadHandle, error) {
 	if err != nil {
 		return item, nil, err
 	}
+	if strings.HasPrefix(key, "remote:") {
+		return item, nil, errors.New("文件保存在远端节点")
+	}
 	path := filepath.Join(m.objects, key)
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -324,7 +342,7 @@ func (m *Manager) Open(id string) (Item, *ReadHandle, error) {
 }
 
 func (m *Manager) List() ([]Item, error) {
-	rows, err := m.db.DB.Query("SELECT id,display_name,size,sha256,created_at FROM files WHERE state='available' ORDER BY created_at DESC,id")
+	rows, err := m.db.DB.Query("SELECT f.id,f.display_name,f.size,f.sha256,f.created_at,COALESCE(l.node_id,'') FROM files f LEFT JOIN node_locations l ON l.file_id=f.id WHERE f.state='available' ORDER BY f.created_at DESC,f.id")
 	if err != nil {
 		return nil, err
 	}
@@ -332,12 +350,18 @@ func (m *Manager) List() ([]Item, error) {
 	items := make([]Item, 0)
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.Name, &item.Size, &item.SHA256, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Size, &item.SHA256, &item.CreatedAt, &item.StorageNode); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (m *Manager) Metadata(id string) (Item, error) {
+	var v Item
+	err := m.db.DB.QueryRow(`SELECT f.id,f.display_name,f.size,f.sha256,f.created_at,COALESCE(l.node_id,'') FROM files f LEFT JOIN node_locations l ON l.file_id=f.id WHERE f.id=? AND f.state='available'`, id).Scan(&v.ID, &v.Name, &v.Size, &v.SHA256, &v.CreatedAt, &v.StorageNode)
+	return v, err
 }
 
 func (m *Manager) Rename(id, name string) error {
@@ -366,6 +390,9 @@ func (m *Manager) Remove(id string) error {
 	}
 	if err != nil {
 		return err
+	}
+	if strings.HasPrefix(key, "remote:") {
+		return errors.New("远端文件须通过节点生命周期删除")
 	}
 	if _, err = m.db.DB.Exec("UPDATE files SET state='deleting',updated_at=? WHERE id=?", time.Now().Unix(), id); err != nil {
 		return err
@@ -468,7 +495,7 @@ func (m *Manager) Recover() error {
 			}
 		}
 	}
-	files, err := m.db.DB.Query("SELECT id,object_key FROM files WHERE state='deleting'")
+	files, err := m.db.DB.Query("SELECT id,object_key FROM files WHERE state='deleting' AND NOT EXISTS (SELECT 1 FROM node_locations l WHERE l.file_id=files.id)")
 	if err != nil {
 		return err
 	}

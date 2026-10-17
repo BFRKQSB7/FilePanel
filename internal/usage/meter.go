@@ -179,6 +179,16 @@ func (m *Meter) Begin(ip, category string, expect int64) (*Stream, error) {
 	return &Stream{m: m, ip: ip, category: category, expect: expect}, nil
 }
 
+// BeginReceived applies the same durable reservation boundary before reading
+// inbound node traffic. Unknown/unconfirmed bytes remain conservative on crash.
+func (m *Meter) BeginReceived(ip, category string, expect int64) (*Stream, error) {
+	s, err := m.Begin(ip, category, expect)
+	if err == nil {
+		s.received = true
+	}
+	return s, err
+}
+
 // RecordReceived 记录入站字节（上传）。入站不会被拒绝，只进入周期与分类统计。
 func (m *Meter) RecordReceived(category string, n int64) error {
 	if n <= 0 {
@@ -200,6 +210,9 @@ func (m *Meter) RecordReceived(category string, n int64) error {
 		return err
 	}
 	if _, err := tx.Exec("UPDATE usage_periods SET received=received+? WHERE start=?", n, p.Start); err != nil {
+		return err
+	}
+	if err := m.day(tx, 0, n, 0); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT INTO usage_categories(period_start,category,direction,bytes) VALUES(?,?,'received',?)

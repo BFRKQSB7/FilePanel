@@ -36,6 +36,7 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 {{if .Cover}}<div class="banner"><img src="/a/{{.Cover}}" alt="{{.Name}} 封面"></div>{{end}}
 {{if .Notice}}<div class="notice {{if .NoticeErr}}err{{end}}" role="status">{{.Notice}}</div>{{end}}
 <div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 下载链接 5 分钟内有效</small></div></div>
+{{if .Lines}}<form action="{{.Base}}/s/{{.Slug}}/get" method="get"><label>下载线路 <select name="relay"><option value="">自动（管理员默认出口）</option><option value="local">本机出口</option>{{range .Lines}}<option value="{{.ID}}">{{.Label}}</option>{{end}}</select></label> <button class="btn ghost" type="submit">使用所选线路</button></form>{{end}}
 {{if .Shots}}<div class="shots">{{range .Shots}}<img src="/a/{{.}}" alt="截图" loading="lazy">{{end}}</div>{{end}}
 {{if .Body}}<div class="md">{{.Body}}</div>{{end}}
 <dl class="facts"><dt>文件名</dt><dd>{{.FileName}}</dd><dt>大小</dt><dd>{{size .Size}}</dd><dt>SHA-256</dt><dd>{{.SHA}}</dd></dl></article>
@@ -217,8 +218,22 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		Body                                                       template.HTML
 		Shots                                                      []string
 		CanDownload                                                bool
+		Lines                                                      []publicLine
 	}{page: s.newPage(displayName(sh), ""), Slug: sh.Slug, Name: displayName(sh), Version: sh.Version, Summary: sh.Summary,
 		Cover: sh.CoverAsset, Button: sh.ButtonText, FileName: sh.FileName, SHA: sh.SHA256, Size: sh.Size}
+	if s.nodes != nil {
+		if list, e := s.nodes.List(); e == nil {
+			for _, n := range list {
+				if n.Relay && n.DataReady {
+					region := n.Region
+					if region == "" {
+						region = "地区未知"
+					}
+					data.Lines = append(data.Lines, publicLine{n.ID, fmt.Sprintf("线路 %d · %s", len(data.Lines)+1, region)})
+				}
+			}
+		}
+	}
 	if data.Base != "" {
 		data.Canonical = s.entryURL("/s/" + sh.Slug)
 	}
@@ -233,9 +248,12 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	notice, ok := s.quotaNotice(r)
+	if !s.needsLocalBudget(r,sh.FileID){notice,ok="",true}
 	data.CanDownload, data.Notice, data.NoticeErr = ok, notice, !ok
 	s.renderPublic(w, http.StatusOK, "share", data)
 }
+
+type publicLine struct{ ID, Label string }
 
 // getLink 为访客签发初次凭证（300 秒）并跳转到受控内容入口。
 func (s *Server) getLink(w http.ResponseWriter, r *http.Request) {
@@ -245,13 +263,17 @@ func (s *Server) getLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := s.clientIP(r)
-	if err := s.meter.Available(ip); err != nil {
+	if err := s.meter.Available(ip); err != nil && s.needsLocalBudget(r,sh.FileID) {
 		derr := downloadError(err)
 		s.errorPage(w, r, derr.Status, derr.Message, "说明页仍可浏览，稍后可再次尝试下载。", "/s/"+sh.Slug+"/get", "重新尝试", "/s/"+sh.Slug)
 		return
 	}
 	token, _ := s.dl.Issue(download.Claims{File: sh.FileID, SHA: sh.SHA256, AuthVersion: sh.AuthVersion, Scope: "public", IP: ip})
-	http.Redirect(w, r, s.entryURL("/d/"+url.PathEscape(sh.FileID)+"?t="+url.QueryEscape(token)), http.StatusFound)
+	query := url.Values{"t": {token}}
+	if relay := r.URL.Query().Get("relay"); relay != "" {
+		query.Set("relay", relay)
+	}
+	http.Redirect(w, r, s.entryURL("/d/"+url.PathEscape(sh.FileID)+"?"+query.Encode()), http.StatusFound)
 }
 
 func downloadError(err error) *download.Error {
@@ -287,6 +309,9 @@ func (s *Server) content(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.shares.Authorized(id, claims.AuthVersion); err != nil {
 		s.errorPage(w, r, http.StatusGone, "该资源已停止分享", "管理员已关闭分享，旧链接已失效。", "", "", "/")
+		return
+	}
+	if s.distribute(w, r, claims) {
 		return
 	}
 	err = s.dl.Serve(w, r, download.Request{FileID: id, SHA: claims.SHA, Category: usage.CategoryPublic, IP: ip,

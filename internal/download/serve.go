@@ -69,22 +69,40 @@ type Request struct {
 	FileID string
 	// SHA 非空时必须与当前不可变版本一致。
 	SHA      string
+	Name     string
 	Category string
 	IP       string
 	// Revalidate 在开始前与每个续租周期调用；返回错误即视为授权已撤销。
 	Revalidate func() error
+	// Source is an authenticated, streaming remote source. Nil uses local storage.
+	Source func(context.Context) (files.Item, ReadSeekCloser, error)
+	// Transit traffic is measured at this hop but is not a visitor completion.
+	Transit bool
+}
+
+type ReadSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
 }
 
 type lease struct {
-	file    string
-	cancel  context.CancelFunc
-	rc      *http.ResponseController
-	mu      sync.Mutex
-	expires time.Time
+	file      string
+	cancel    context.CancelFunc
+	rc        *http.ResponseController
+	mu        sync.Mutex
+	expires   time.Time
+	closer    io.Closer
+	closeOnce sync.Once
 }
 
 func (l *lease) stop() {
 	l.cancel()
+	l.closeOnce.Do(func() {
+		if l.closer != nil {
+			_ = l.closer.Close()
+		}
+	})
 	// 唤醒可能阻塞在慢速客户端上的 Write。
 	_ = l.rc.SetWriteDeadline(time.Unix(1, 0))
 }
@@ -138,13 +156,23 @@ func quotaError(err error) *Error {
 
 // Serve 发送文件的完整内容或一个 Range 区间（HEAD 只发头部）。
 func (s *Service) Serve(w http.ResponseWriter, r *http.Request, req Request) error {
-	item, file, err := s.files.Open(req.FileID)
+	var item files.Item
+	var file ReadSeekCloser
+	var err error
+	if req.Source != nil {
+		item, file, err = req.Source(r.Context())
+	} else {
+		item, file, err = s.files.Open(req.FileID)
+	}
 	if err != nil {
 		return &Error{Status: http.StatusNotFound, Code: "not_found", Message: "文件不存在或不可用"}
 	}
 	defer file.Close()
 	if req.SHA != "" && req.SHA != item.SHA256 {
 		return &Error{Status: http.StatusConflict, Code: "changed", Message: "文件版本已变化，请重新获取下载链接"}
+	}
+	if req.Name != "" {
+		item.Name = req.Name
 	}
 	if req.Revalidate != nil {
 		if err := req.Revalidate(); err != nil {
@@ -193,7 +221,7 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, req Request) err
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	l := &lease{file: req.FileID, cancel: cancel, rc: http.NewResponseController(w), expires: s.Now().Add(s.LeaseTTL)}
+	l := &lease{file: req.FileID, cancel: cancel, rc: http.NewResponseController(w), expires: s.Now().Add(s.LeaseTTL), closer: file}
 	s.mu.Lock()
 	s.leases[l] = struct{}{}
 	s.mu.Unlock()
@@ -216,11 +244,19 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, req Request) err
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if l.expired(s.Now(), s.Skew) {
+					l.stop()
+					return
+				}
 				if req.Revalidate != nil {
 					if err := req.Revalidate(); err != nil {
 						l.stop()
 						return
 					}
+				}
+				if l.expired(s.Now(), s.Skew) {
+					l.stop()
+					return
 				}
 				l.renew(s.Now().Add(s.LeaseTTL))
 				_ = stream.Flush()
@@ -264,6 +300,6 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, req Request) err
 			break
 		}
 	}
-	completedFull = remaining == 0 && rng.start == 0 && rng.length == item.Size
+	completedFull = !req.Transit && remaining == 0 && rng.start == 0 && rng.length == item.Size
 	return nil
 }

@@ -31,15 +31,17 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("用法: filepanel serve [参数] | filepanel init-token [--data-dir PATH]")
+		return errors.New("用法: filepanel serve [参数] | filepanel init-token [--data-dir PATH] | filepanel node join/serve [参数]")
 	}
 	switch args[0] {
 	case "serve":
 		return serve(args[1:])
 	case "init-token":
 		return createInitToken(args[1:])
+	case "node":
+		return nodeCommand(args[1:])
 	case "help", "-h", "--help":
-		fmt.Println("用法: filepanel serve [--data-dir PATH] [--listen ADDRESS]\n      filepanel init-token [--data-dir PATH]")
+		fmt.Println("用法: filepanel serve [--data-dir PATH] [--listen ADDRESS]\n      filepanel init-token [--data-dir PATH]\n      filepanel node join/serve [参数；使用 --help 查看]")
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
@@ -85,6 +87,9 @@ func createInitToken(args []string) error {
 		return err
 	}
 	defer s.Close()
+	if err := requirePanelDir(s); err != nil {
+		return err
+	}
 	token, err := auth.New(s).CreateInitToken()
 	if err != nil {
 		return err
@@ -123,6 +128,9 @@ func serve(args []string) error {
 		return err
 	}
 	defer s.Close()
+	if err := requirePanelDir(s); err != nil {
+		return err
+	}
 	a := auth.New(s)
 	manager, err := files.New(s, root, files.DefaultMaxUpload, 0)
 	if err != nil {
@@ -157,6 +165,7 @@ func serve(args []string) error {
 	}()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go deps.Nodes.Run(ctx)
 	select {
 	case err := <-serverErrors:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -178,4 +187,13 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func requirePanelDir(s *store.Store) error {
+	if _, ok, e := s.Setting("node_identity"); e != nil {
+		return e
+	} else if ok {
+		return errors.New("节点数据目录不能作为面板运行")
+	}
+	return nil
 }

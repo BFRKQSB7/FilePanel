@@ -22,6 +22,7 @@ type Stream struct {
 	rowSent     int64
 	sent        int64
 	closed      bool
+	received    bool
 }
 
 // Grant 返回当前可发送的字节数（≤want）。预算耗尽时预留新块；到线返回 ErrQuota/ErrIPLimit。
@@ -95,11 +96,24 @@ func (s *Stream) flushTx(tx *sql.Tx) error {
 	if delta <= 0 {
 		return nil
 	}
-	if _, err := tx.Exec("UPDATE usage_periods SET sent=sent+? WHERE start=?", delta, s.rowPeriod); err != nil {
+	column, direction := "sent", "sent"
+	if s.received {
+		column, direction = "received", "received"
+	}
+	var sent, received int64
+	if s.received {
+		received = delta
+	} else {
+		sent = delta
+	}
+	if err := s.m.day(tx, sent, received, 0); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO usage_categories(period_start,category,direction,bytes) VALUES(?,?,'sent',?)
-		ON CONFLICT(period_start,category,direction) DO UPDATE SET bytes=bytes+excluded.bytes`, s.rowPeriod, s.category, delta); err != nil {
+	if _, err := tx.Exec("UPDATE usage_periods SET "+column+"="+column+"+? WHERE start=?", delta, s.rowPeriod); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO usage_categories(period_start,category,direction,bytes) VALUES(?,?,?,?)
+		ON CONFLICT(period_start,category,direction) DO UPDATE SET bytes=bytes+excluded.bytes`, s.rowPeriod, s.category, direction, delta); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT INTO usage_ips(period_start,ip,bytes) VALUES(?,?,?)
@@ -220,6 +234,9 @@ func (s *Stream) Close(completed bool) error {
 		}
 	}
 	if completed {
+		if err := s.m.day(tx, 0, 0, 1); err != nil {
+			return err
+		}
 		p, err := s.m.period(tx, cfg)
 		if err != nil {
 			return err
