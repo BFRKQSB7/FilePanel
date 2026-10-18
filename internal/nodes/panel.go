@@ -25,17 +25,20 @@ import (
 )
 
 type Panel struct {
-	DB        *store.Store
-	Files     *files.Manager
-	Shares    *share.Manager
-	Auth      *auth.Auth
-	Meter     *usage.Meter
-	Download  *download.Service
-	key       ed25519.PrivateKey
-	Now       func() time.Time
-	GeoLookup func(context.Context, string) (string, error)
-	mu        sync.Mutex
-	clients   map[string]*http.Client
+	DB         *store.Store
+	Files      *files.Manager
+	Shares     *share.Manager
+	Auth       *auth.Auth
+	Meter      *usage.Meter
+	Download   *download.Service
+	key        ed25519.PrivateKey
+	Now        func() time.Time
+	GeoLookup  func(context.Context, string) (string, error)
+	mu         sync.Mutex
+	clients    map[string]*http.Client
+	opsMu      sync.Mutex
+	moveWorker sync.Mutex
+	MoveFault  func(string) error
 }
 
 func NewPanel(db *store.Store, f *files.Manager, sh *share.Manager, a *auth.Auth, m *usage.Meter, d *download.Service) (*Panel, error) {
@@ -45,6 +48,9 @@ func NewPanel(db *store.Store, f *files.Manager, sh *share.Manager, a *auth.Auth
 		return nil, errors.New("节点数据目录不能作为面板运行")
 	}
 	if _, e := db.DB.Exec("UPDATE node_transfers SET state='failed' WHERE action='upload' AND state='pending'"); e != nil {
+		return nil, e
+	}
+	if _, e := db.DB.Exec("UPDATE file_moves SET fence=fence+1 WHERE state NOT IN ('done','cancelled')"); e != nil {
 		return nil, e
 	}
 	s, ok, err := db.Setting("node_panel_key")
@@ -186,6 +192,12 @@ func (p *Panel) RemoveNode(id string) error {
 	}
 	if count > 0 {
 		return errors.New("节点仍有关联文件或未完成上传，须先迁移或保留离线记录")
+	}
+	if e = tx.QueryRow("SELECT COUNT(*) FROM file_moves WHERE (source=? OR target=?) AND state NOT IN ('done','cancelled')", id, id).Scan(&count); e != nil {
+		return e
+	}
+	if count > 0 {
+		return errors.New("节点仍有移动或对象清理未完成，保留离线记录")
 	}
 	for _, table := range []string{"node_reports", "node_days", "node_rebinds"} {
 		if _, e = tx.Exec("DELETE FROM "+table+" WHERE node_id=?", id); e != nil {
@@ -359,7 +371,14 @@ func (p *Panel) authorize(t Transfer, start bool) error {
 			}
 		}
 		v, e := p.Files.Metadata(t.File)
-		if e != nil || v.SHA256 != t.SHA || v.StorageNode != t.Source {
+		if e != nil || v.SHA256 != t.SHA {
+			return ErrDenied
+		}
+		obj, oe := p.activeObject(t.File)
+		if oe != nil {
+			return ErrDenied
+		}
+		if (v.StorageNode != t.Source || obj != p.transferObject(t)) && (start || !p.oldReader(t)) {
 			return ErrDenied
 		}
 		if t.Session != "" {
@@ -386,6 +405,11 @@ func (p *Panel) authorize(t Transfer, start bool) error {
 	return nil
 }
 func (p *Panel) permit(n Node, in Check) (Permit, error) {
+	p.opsMu.Lock()
+	defer p.opsMu.Unlock()
+	if out, handled, e := p.movePermit(n, in); handled {
+		return out, e
+	}
 	t, e := p.transfer(in.Transfer)
 	if e != nil || p.authorize(t, in.Start) != nil {
 		return Permit{}, ErrDenied
@@ -408,6 +432,7 @@ func (p *Panel) permit(n Node, in Check) (Permit, error) {
 		return Permit{}, e
 	}
 	out := Permit{Control: p.control(n, in.Nonce), Action: t.Action, File: files.Item{ID: t.File, Name: t.Name, SHA256: t.SHA}, Ticket: p.ticket(t.ID, "source"), VisitorIP: t.IP}
+	out.ObjectID = p.transferObject(t)
 	if t.Action == "download" {
 		out.File, e = p.Files.Metadata(t.File)
 		if e != nil {
@@ -448,6 +473,8 @@ func (p *Panel) check(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Panel) NewDownload(ctx context.Context, file, relay, ip, session string, version int64) (Transfer, error) {
+	p.opsMu.Lock()
+	defer p.opsMu.Unlock()
 	v, e := p.Files.Metadata(file)
 	if e != nil {
 		return Transfer{}, e
@@ -467,7 +494,15 @@ func (p *Panel) NewDownload(ctx context.Context, file, relay, ip, session string
 		}
 	}
 	t := Transfer{ID: random(), Action: "download", File: file, Source: v.StorageNode, Relay: relay, SHA: v.SHA256, Name: v.Name, IP: ip, Session: session, Version: version, Expires: p.Now().Add(300 * time.Second).Unix(), State: "active"}
-	return t, p.save(t)
+	if e = p.save(t); e != nil {
+		return t, e
+	}
+	obj, e := p.activeObject(file)
+	if e != nil {
+		return t, e
+	}
+	_, e = p.DB.DB.Exec("INSERT INTO transfer_objects(transfer_id,object_id) VALUES(?,?)", t.ID, obj)
+	return t, e
 }
 func (p *Panel) TicketURL(t Transfer) string {
 	n, e := p.Get(t.Relay)
@@ -506,6 +541,33 @@ func (p *Panel) source(w http.ResponseWriter, r *http.Request) {
 		fail(w)
 		return
 	}
+	p.opsMu.Lock()
+	movePermit, handled, me := p.movePermit(Node{}, Check{Transfer: ticket.ID, Role: "source", Start: true})
+	p.opsMu.Unlock()
+	if handled {
+		if me != nil || movePermit.Action != "move_read" {
+			fail(w)
+			return
+		}
+		e = p.Download.Serve(w, r, download.Request{FileID: movePermit.File.ID, SHA: movePermit.File.SHA256, IP: "move", Category: "move_source", Transit: true,
+			Source: func(context.Context) (files.Item, download.ReadSeekCloser, error) {
+				v, f, e := p.Files.OpenObject(movePermit.ObjectID, movePermit.File.SHA256)
+				if e != nil {
+					return v, nil, e
+				}
+				return v, &moveFaultReader{readSeekCloser: f, panel: p}, nil
+			},
+			Revalidate: func() error {
+				p.opsMu.Lock()
+				defer p.opsMu.Unlock()
+				_, _, e := p.movePermit(Node{}, Check{Transfer: ticket.ID, Role: "source"})
+				return e
+			}})
+		if e != nil {
+			fail(w)
+		}
+		return
+	}
 	t, e := p.transfer(ticket.ID)
 	if e != nil || t.Action != "download" || t.Source != "" || p.authorize(t, true) != nil {
 		fail(w)
@@ -516,7 +578,9 @@ func (p *Panel) source(w http.ResponseWriter, r *http.Request) {
 		fail(w)
 		return
 	}
-	e = p.Download.Serve(w, r, download.Request{FileID: t.File, SHA: t.SHA, IP: t.IP, Category: "panel_source", Transit: true, Revalidate: func() error {
+	e = p.Download.Serve(w, r, download.Request{FileID: t.File, SHA: t.SHA, IP: t.IP, Category: "panel_source", Transit: true, Source: func(context.Context) (files.Item, download.ReadSeekCloser, error) {
+		return p.Files.OpenObject(p.transferObject(t), t.SHA)
+	}, Revalidate: func() error {
 		n, e := p.Get(t.Relay)
 		if e != nil || n.Revoked || !n.Relay || p.Now().Unix() > n.LastSeen+30 {
 			return ErrDenied
@@ -619,6 +683,13 @@ func (p *Panel) commitUpload(t Transfer, v files.Item) error {
 	return tx.Commit()
 }
 func (p *Panel) Delete(ctx context.Context, id string) error {
+	var active int
+	if e := p.DB.DB.QueryRow("SELECT COUNT(*) FROM file_moves WHERE file_id=? AND state NOT IN ('done','cancelled')", id).Scan(&active); e != nil {
+		return e
+	}
+	if active > 0 {
+		return errors.New("文件移动尚未完成，请先完成或取消移动")
+	}
 	var previous string
 	if p.DB.DB.QueryRow("SELECT id FROM node_transfers WHERE file_id=? AND action='delete' AND state='deleting'", id).Scan(&previous) == nil {
 		t, e := p.transfer(previous)
@@ -627,24 +698,28 @@ func (p *Panel) Delete(ctx context.Context, id string) error {
 		}
 		return p.deleteTransfer(ctx, t)
 	}
-	var node, sha, name string
-	e := p.DB.DB.QueryRow(`SELECT l.node_id,l.sha256,f.display_name FROM node_locations l JOIN files f ON f.id=l.file_id WHERE l.file_id=?`, id).Scan(&node, &sha, &name)
+	tx, e := p.DB.DB.Begin()
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback()
+	var node, sha, name, obj string
+	e = tx.QueryRow(`SELECT l.node_id,l.sha256,f.display_name,COALESCE(o.object_id,f.id) FROM node_locations l JOIN files f ON f.id=l.file_id LEFT JOIN file_objects o ON o.file_id=f.id WHERE l.file_id=? AND f.state='available'`, id).Scan(&node, &sha, &name, &obj)
 	if errors.Is(e, sql.ErrNoRows) {
+		tx.Rollback()
 		return p.Files.Remove(id)
 	}
 	if e != nil {
 		return e
 	}
 	t := Transfer{ID: random(), Action: "delete", File: id, Source: node, SHA: sha, Name: name, Expires: p.Now().Add(365 * 24 * time.Hour).Unix(), State: "deleting"}
-	tx, e := p.DB.DB.Begin()
-	if e != nil {
-		return e
-	}
-	defer tx.Rollback()
 	if _, e = tx.Exec("UPDATE files SET state='deleting' WHERE id=?", id); e != nil {
 		return e
 	}
 	if _, e = tx.Exec(`INSERT INTO node_transfers(id,action,file_id,source,relay,sha256,name,visitor_ip,auth_version,admin_session,expires,state) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, t.ID, t.Action, t.File, t.Source, t.Relay, t.SHA, t.Name, t.IP, t.Version, t.Session, t.Expires, t.State); e != nil {
+		return e
+	}
+	if _, e = tx.Exec("INSERT INTO transfer_objects(transfer_id,object_id) VALUES(?,?)", t.ID, obj); e != nil {
 		return e
 	}
 	if e = tx.Commit(); e != nil {
@@ -730,6 +805,7 @@ func (p *Panel) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			p.ReconcileMoves(ctx)
 			_, _ = p.DB.DB.Exec("DELETE FROM node_transfers WHERE id IN (SELECT id FROM node_transfers t WHERE expires+35<? AND state NOT IN ('validated','deleting') AND NOT EXISTS (SELECT 1 FROM node_transfer_leases l WHERE l.transfer_id=t.id AND l.until>=?) LIMIT 256)", p.Now().Unix(), p.Now().Unix())
 			_, _ = p.DB.DB.Exec("DELETE FROM node_tickets WHERE expires<?", p.Now().Unix())
 			p.Reconcile(ctx)

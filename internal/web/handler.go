@@ -21,7 +21,7 @@ import (
 	"filepanel/internal/usage"
 )
 
-//go:embed index.html admin-ext.js access.js nodes.js
+//go:embed index.html admin-ext.js access.js nodes.js moves.js
 var assets embed.FS
 
 type Server struct {

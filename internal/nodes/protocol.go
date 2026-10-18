@@ -194,6 +194,7 @@ type Check struct {
 }
 type Permit struct {
 	Control
+	ObjectID  string     `json:"object_id,omitempty"`
 	Action    string     `json:"action"`
 	File      files.Item `json:"file"`
 	Source    string     `json:"source"`

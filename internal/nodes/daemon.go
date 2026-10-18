@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -267,6 +268,7 @@ func (n *Daemon) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST "+prefix+"/rebind", n.rebind)
 	mux.HandleFunc("PUT "+prefix+"/object", n.upload)
+	mux.HandleFunc("POST "+prefix+"/pull", n.pull)
 	mux.HandleFunc("GET "+prefix+"/object", n.metadata)
 	mux.HandleFunc("DELETE "+prefix+"/object", n.remove)
 	mux.HandleFunc("GET "+prefix+"/source", n.source)
@@ -277,9 +279,40 @@ func (n *Daemon) Handler() http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
+func (n *Daemon) pull(w http.ResponseWriter, r *http.Request) {
+	p, e := n.permission(r.Context(), bearer(r), "source", "", true)
+	if e != nil || p.Action != "move_write" || Endpoint(p.Source) != nil {
+		fail(w)
+		return
+	}
+	if e = n.Files.CheckSpace(uint64(p.File.Size)); e != nil {
+		fail(w)
+		return
+	}
+	if e = n.Meter.Available("panel"); e != nil {
+		fail(w)
+		return
+	}
+	c, e := Client(p.SourceCA)
+	if e != nil {
+		fail(w)
+		return
+	}
+	defer c.CloseIdleConnections()
+	src := &remoteReader{ctx: r.Context(), client: c, endpoint: p.Source, ticket: p.Ticket, size: p.File.Size}
+	defer src.Close()
+	if _, e = src.Seek(0, io.SeekStart); e != nil {
+		fail(w)
+		return
+	}
+	copy := r.Clone(r.Context())
+	copy.Body = src
+	copy.ContentLength = p.File.Size
+	n.upload(w, copy)
+}
 func (n *Daemon) upload(w http.ResponseWriter, r *http.Request) {
 	p, e := n.permission(r.Context(), bearer(r), "source", "", true)
-	if e != nil || p.Action != "upload" || !p.Storage {
+	if e != nil || (p.Action != "upload" && p.Action != "move_write") || !p.Storage {
 		fail(w)
 		return
 	}
@@ -289,7 +322,7 @@ func (n *Daemon) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unlock()
-	if v, e := n.Files.Metadata(p.File.ID); e == nil {
+	if v, e := n.Files.ObjectMetadata(p.File.ID); e == nil {
 		send(w, 200, v)
 		return
 	}
@@ -336,7 +369,17 @@ func (n *Daemon) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer stream.Close(false)
-	v, e := n.Files.UploadID(ctx, p.File.ID, p.File.Name, -1, &sentReader{source: r.Body, stream: stream}, func() error { _, e := n.permission(ctx, bearer(r), "source", "", false); return e })
+	upload := n.Files.UploadID
+	expected := int64(-1)
+	if p.Action == "move_write" {
+		upload = n.Files.UploadStaged
+		expected = p.File.Size
+		if e = n.Files.CheckSpace(uint64(expected)); e != nil {
+			fail(w)
+			return
+		}
+	}
+	v, e := upload(ctx, p.File.ID, p.File.Name, expected, &sentReader{source: r.Body, stream: stream}, func() error { _, e := n.permission(ctx, bearer(r), "source", "", false); return e })
 	if e != nil {
 		fail(w)
 		return
@@ -345,7 +388,7 @@ func (n *Daemon) upload(w http.ResponseWriter, r *http.Request) {
 }
 func (n *Daemon) metadata(w http.ResponseWriter, r *http.Request) {
 	p, e := n.permission(r.Context(), bearer(r), "source", "", true)
-	if e != nil || p.Action != "upload" {
+	if e != nil || (p.Action != "upload" && p.Action != "move_write") {
 		fail(w)
 		return
 	}
@@ -355,7 +398,7 @@ func (n *Daemon) metadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unlock()
-	v, e := n.Files.Metadata(p.File.ID)
+	v, e := n.Files.ObjectMetadata(p.File.ID)
 	if e != nil {
 		if errors.Is(e, sql.ErrNoRows) {
 			send(w, http.StatusNotFound, map[string]string{"error": "对象尚未提交"})
@@ -364,26 +407,48 @@ func (n *Daemon) metadata(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if p.Action == "move_write" {
+		if n.Files.VerifyObject(p.File.ID, p.File.SHA256, p.File.Size) != nil {
+			fail(w)
+			return
+		}
+	}
 	send(w, 200, v)
 }
 func (n *Daemon) remove(w http.ResponseWriter, r *http.Request) {
 	p, e := n.permission(r.Context(), bearer(r), "source", "", true)
-	if e != nil || p.Action != "delete" {
+	if e != nil || (p.Action != "delete" && p.Action != "move_clean") {
 		fail(w)
 		return
 	}
-	unlock, e := n.lockObject(r.Context(), p.File.ID)
+	obj := p.ObjectID
+	if obj == "" {
+		obj = p.File.ID
+	}
+	unlock, e := n.lockObject(r.Context(), obj)
 	if e != nil {
 		fail(w)
 		return
 	}
 	defer unlock()
-	if v, e := n.Files.Metadata(p.File.ID); e == nil && v.SHA256 != p.File.SHA256 {
+	if _, e = n.permission(r.Context(), bearer(r), "source", "", true); e != nil {
+		fail(w)
+		return
+	}
+	if p.Action == "move_clean" {
+		if e = n.Files.CleanupObject(obj, p.File.SHA256, true); e != nil {
+			fail(w)
+			return
+		}
+		send(w, 200, map[string]bool{"deleted": true})
+		return
+	}
+	if v, e := n.Files.ObjectMetadata(obj); e == nil && v.SHA256 != p.File.SHA256 {
 		fail(w)
 		return
 	}
 	n.Download.Revoke(p.File.ID)
-	if e = n.Files.Remove(p.File.ID); e != nil {
+	if e = n.Files.CleanupObject(obj, p.File.SHA256, true); e != nil {
 		fail(w)
 		return
 	}
@@ -402,7 +467,7 @@ func (n *Daemon) relay(w http.ResponseWriter, r *http.Request) {
 }
 func (n *Daemon) serve(w http.ResponseWriter, r *http.Request, ticket, role, ip string) {
 	p, e := n.permission(r.Context(), ticket, role, ip, true)
-	if e != nil || p.Action != "download" || (role == "relay" && r.PathValue("id") != p.File.ID) {
+	if e != nil || (p.Action != "download" && p.Action != "move_read") || (role == "relay" && r.PathValue("id") != p.File.ID) {
 		fail(w)
 		return
 	}
@@ -421,6 +486,18 @@ func (n *Daemon) serve(w http.ResponseWriter, r *http.Request, ticket, role, ip 
 		return e
 	}}
 	id, _ := n.connection()
+	if role == "source" || (role == "relay" && p.File.StorageNode == id.ID) {
+		obj := p.ObjectID
+		if obj == "" {
+			obj = p.File.ID
+		}
+		req.Source = func(context.Context) (files.Item, download.ReadSeekCloser, error) {
+			v, f, e := n.Files.OpenObject(obj, p.File.SHA256)
+			v.ID = p.File.ID
+			v.Name = p.File.Name
+			return v, f, e
+		}
+	}
 	if role == "relay" && p.File.StorageNode != id.ID {
 		if Endpoint(p.Source) != nil {
 			fail(w)

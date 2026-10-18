@@ -25,8 +25,9 @@ type migrationNode struct {
 	Credential string `json:"credential"`
 }
 type migrationFile struct {
-	File  files.Item   `json:"file"`
-	Share *share.Share `json:"share,omitempty"`
+	File     files.Item   `json:"file"`
+	Share    *share.Share `json:"share,omitempty"`
+	ObjectID string       `json:"object_id,omitempty"`
 }
 type migrationBundle struct {
 	Version  int             `json:"version"`
@@ -63,6 +64,13 @@ func migrationAEAD(password string, salt []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 func (p *Panel) ExportMigration(password string) ([]byte, error) {
+	var moving int
+	if e := p.DB.DB.QueryRow("SELECT COUNT(*) FROM file_moves WHERE state NOT IN ('done','cancelled')").Scan(&moving); e != nil {
+		return nil, e
+	}
+	if moving > 0 {
+		return nil, errors.New("仍有文件移动或源清理未完成")
+	}
 	var active int
 	if e := p.DB.DB.QueryRow("SELECT COUNT(*) FROM node_transfers WHERE (action='upload' AND state IN ('pending','validated')) OR (action='delete' AND state='deleting')").Scan(&active); e != nil {
 		return nil, e
@@ -98,6 +106,10 @@ func (p *Panel) ExportMigration(password string) ([]byte, error) {
 			continue
 		}
 		entry := migrationFile{File: v}
+		entry.ObjectID, e = p.activeObject(v.ID)
+		if e != nil {
+			return nil, e
+		}
 		if s, e := p.Shares.Get(v.ID); e == nil {
 			s.CoverAsset = ""
 			entry.Share = &s
@@ -244,6 +256,11 @@ func (p *Panel) ImportMigration(data []byte, password, endpoint, ca string, appl
 		}
 		if _, e = tx.Exec("INSERT INTO node_locations(file_id,node_id,sha256) VALUES(?,?,?)", v.ID, v.StorageNode, v.SHA256); e != nil {
 			return result, e
+		}
+		if entry.ObjectID != "" {
+			if _, e = tx.Exec("INSERT INTO file_objects(file_id,object_id) VALUES(?,?)", v.ID, entry.ObjectID); e != nil {
+				return result, e
+			}
 		}
 		if s := entry.Share; s != nil {
 			_, e = tx.Exec(`INSERT INTO shares(file_id,slug,title,version,summary,markdown,button_text,enabled,featured,auth_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, s.Slug, s.Title, s.Version, s.Summary, s.Markdown, s.ButtonText, s.Enabled, s.Featured, s.AuthVersion, p.Now().Unix(), s.UpdatedAt)

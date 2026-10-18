@@ -16,6 +16,7 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 		return
 	}
 	s.nodes.Routes(mux)
+	s.moveRoutes(mux)
 	mux.HandleFunc("POST /api/nodes/migration/export", s.nodeMigrationExport)
 	mux.HandleFunc("POST /api/nodes/migration/preview", s.nodeMigrationImport)
 	mux.HandleFunc("POST /api/nodes/migration/apply", s.nodeMigrationImport)

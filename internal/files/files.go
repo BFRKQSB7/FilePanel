@@ -283,7 +283,7 @@ func (m *Manager) finishVerified(id, objKey, name string, size int64, sha string
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`INSERT INTO files(id,object_key,display_name,size,sha256,state,created_at,updated_at) VALUES(?,?,?,?,?,'available',?,?) ON CONFLICT(id) DO NOTHING`, id, objKey, name, size, sha, created, time.Now().Unix()); err != nil {
+	if _, err = tx.Exec(`INSERT INTO files(id,object_key,display_name,size,sha256,state,created_at,updated_at) SELECT ?,?,?,?,?,'available',?,? WHERE NOT EXISTS(SELECT 1 FROM object_staging WHERE id=?) ON CONFLICT(id) DO NOTHING`, id, objKey, name, size, sha, created, time.Now().Unix(), id); err != nil {
 		return err
 	}
 	if _, err = tx.Exec("UPDATE uploads SET state='available',updated_at=? WHERE id=?", time.Now().Unix(), id); err != nil {
@@ -337,8 +337,8 @@ func (m *Manager) Open(id string) (Item, *ReadHandle, error) {
 	if err != nil {
 		return item, nil, err
 	}
-	m.readers[id]++
-	return item, &ReadHandle{File: f, manager: m, id: id}, nil
+	m.readers[key]++
+	return item, &ReadHandle{File: f, manager: m, id: key}, nil
 }
 
 func (m *Manager) List() ([]Item, error) {
@@ -394,10 +394,14 @@ func (m *Manager) Remove(id string) error {
 	if strings.HasPrefix(key, "remote:") {
 		return errors.New("远端文件须通过节点生命周期删除")
 	}
-	if _, err = m.db.DB.Exec("UPDATE files SET state='deleting',updated_at=? WHERE id=?", time.Now().Unix(), id); err != nil {
+	result, err := m.db.DB.Exec("UPDATE files SET state='deleting',updated_at=? WHERE id=? AND object_key=?", time.Now().Unix(), id, key)
+	if err != nil {
 		return err
 	}
-	for m.readers[id] > 0 {
+	if n, _ := result.RowsAffected(); n != 1 {
+		return errors.New("文件主位置已变化，请重试删除")
+	}
+	for m.readers[key] > 0 {
 		m.cond.Wait()
 	}
 	if err = os.Remove(filepath.Join(m.objects, key)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -486,7 +490,7 @@ func (m *Manager) Recover() error {
 			}
 		case "available":
 			if _, err := os.Stat(objectPath); errors.Is(err, os.ErrNotExist) {
-				_, err = m.db.DB.Exec("UPDATE files SET state='failed',updated_at=? WHERE id=? AND state='available'", time.Now().Unix(), u.id)
+				_, err = m.db.DB.Exec("UPDATE files SET state='failed',updated_at=? WHERE id=? AND object_key=? AND state='available'", time.Now().Unix(), u.id, u.objectKey)
 				if err != nil {
 					return err
 				}
