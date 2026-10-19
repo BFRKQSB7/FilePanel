@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -266,11 +267,18 @@ func applyWait(t *testing.T, m *Manager) {
 }
 func checkInput(t *testing.T, m *Manager, in Input) View {
 	t.Helper()
-	v, err := m.Check(context.Background(), in)
-	if err != nil {
-		t.Fatal(err)
+	// Start's initial renewal check may briefly own the same operation lock.
+	deadline := time.Now().Add(time.Second)
+	for {
+		v, err := m.Check(context.Background(), in)
+		if err == nil {
+			return v
+		}
+		if err.Error() != "已有检查、绑定或续期正在进行" || time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
 	}
-	return v
 }
 func peerCert(t *testing.T, m *Manager) *x509.Certificate {
 	t.Helper()
@@ -447,6 +455,29 @@ func TestStagingDoesNotPromoteAndUnknownNATDoesNotIssue(t *testing.T) {
 	applyWait(t, m)
 	if m.View().Candidate.Stage != "staging_verified" || m.BaseURL() != "" {
 		t.Fatalf("staging promoted or failed: %+v", m.View())
+	}
+}
+
+func TestStagingPinsIssuedCertificateWithoutInstallingTestRoot(t *testing.T) {
+	for _, promote := range []bool{false, true} {
+		t.Run(fmt.Sprintf("promote=%t", promote), func(t *testing.T) {
+			m, _, _, _ := setupAccess(t, promote)
+			// Match the CLI: no test CA is installed in the system trust store.
+			m.opts.Roots = nil
+			checkInput(t, m, autoInput())
+			applyWait(t, m)
+			v := m.View()
+			if promote {
+				if v.Candidate.Stage != "failed" || !strings.Contains(v.Candidate.Error, "unknown authority") {
+					t.Fatalf("production verification accepted an untrusted CA: %+v", v)
+				}
+			} else if v.Candidate.Stage != "staging_verified" {
+				t.Fatalf("staging verification failed without a system test root: %+v", v)
+			}
+			if v.Active != nil || m.BaseURL() != "" || m.state.Bundle != "" || m.cert != nil || m.opts.Roots != nil {
+				t.Fatal("test certificate changed the active entry or trust store")
+			}
+		})
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -181,6 +182,14 @@ func (m *Manager) probe(ctx context.Context, raw string, addresses []string, exp
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); m.proof = ""; m.mu.Unlock() }()
 	u, _ := url.Parse(raw)
+	roots := m.opts.Roots
+	if m.staging() && expected != nil {
+		// A staging CA is intentionally absent from system trust stores. Trust
+		// only this issued leaf for this probe; hostname, validity and the exact
+		// certificate check below still apply. Production trust is unchanged.
+		roots = x509.NewCertPool()
+		roots.AddCert(expected.Leaf)
+	}
 	port := u.Port()
 	if port == "" {
 		port = "80"
@@ -194,7 +203,7 @@ func (m *Manager) probe(ctx context.Context, raw string, addresses []string, exp
 		if !m.opts.allowPrivate && !publicIP(net.ParseIP(address)) {
 			return errors.New("非公网地址被拒绝")
 		}
-		tr := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: m.opts.Roots, ServerName: u.Hostname()},
+		tr := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, ServerName: u.Hostname()},
 			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 				if m.opts.probeDial != nil {
 					return m.opts.probeDial(ctx, network, net.JoinHostPort(address, port))
