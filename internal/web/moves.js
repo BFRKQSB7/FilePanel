@@ -3,7 +3,7 @@
 const FP = window.FP;
 if (!FP) return;
 const el = (tag, text) => { const n = document.createElement(tag); if (text) n.textContent = text; return n; };
-const box = el('section'); box.className = 'section-card'; box.style.marginTop = '24px'; document.querySelector('#page-files').append(box);
+const box = el('section'); box.className = 'section-card'; box.style.marginTop = '24px'; box.hidden=true; document.querySelector('#page-files').append(box);
 const stages = { preflight: '预检与预留', transferring: '传输', verifying: '校验', switching: '主位置切换', cleaning: '目标已切换，源清理待重试', done: '完成', cancelling: '正在清理临时目标', cancelled: '已取消' };
 const json = body => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 let dialog, polling = false, signature = '';
@@ -11,7 +11,7 @@ const nodeLabel = n => { const endpoint = new URL(n.endpoint); return (n.public_
 FP.openMove = async item => {
  try {
   const state = await FP.api('/api/nodes');
-  dialog?.remove(); dialog = el('dialog'); dialog.setAttribute('aria-label', '移动文件');
+  if(document.querySelector('dialog[open]'))return; dialog = el('dialog');dialog.className='modal'; dialog.setAttribute('aria-label', '移动文件');
   const form = el('div'); form.className = 'setting-form'; dialog.append(form);
   const select = el('select'); select.setAttribute('aria-label', '目标存储位置');
   if (item.storage_node) select.add(new Option('本机存储', ''));
@@ -24,16 +24,16 @@ FP.openMove = async item => {
   select.addEventListener('change', describe); describe();
   const requestID = crypto.randomUUID();
   const start = el('button', '确认移动'); start.type = 'button'; start.disabled = !select.options.length;
-  start.addEventListener('click', async () => { start.disabled = true; try { await FP.api('/api/files/' + encodeURIComponent(item.id) + '/move', json({ request_id: requestID, target: select.value })); dialog.close(); dialog.remove(); FP.toast('移动任务已建立，后台预检后执行'); await load(); } catch(e) { FP.toast(e.message); start.disabled = false; } });
-  const close = el('button', '关闭'); close.type = 'button'; close.addEventListener('click', () => { dialog.close(); dialog.remove(); }); form.append(start, close);
-  document.body.append(dialog); dialog.showModal();
+  start.addEventListener('click', async () => { start.disabled = true; try { await FP.api('/api/files/' + encodeURIComponent(item.id) + '/move', json({ request_id: requestID, target: select.value })); closing(); FP.toast('移动任务已建立，后台预检后执行'); await load(); } catch(e) { FP.toast(e.message); start.disabled = false; } });
+  let closing; const close = el('button', '关闭'); close.type = 'button'; close.addEventListener('click', () => closing()); form.append(start, close);
+  closing=FP.openDialog(dialog);
  } catch(e) { FP.toast(e.message); }
 };
 async function load() {
  if (!FP.csrf() || polling) return; polling = true;
  try {
   const tasks = await FP.api('/api/moves'); const next = JSON.stringify(tasks); if (signature === next) return; signature = next;
-  box.replaceChildren(el('h3', '文件移动任务'));
+  box.hidden=!tasks.length; box.replaceChildren(el('h3', '文件移动任务'));
   if (!tasks.length) box.append(el('p', '在文件操作中选择“移动”，可在这里查看阶段、路径与重试。'));
   for (const task of tasks) {
    const row = el('div'); row.className = 'setting-form';
@@ -52,6 +52,7 @@ async function load() {
   if (tasks.some(t => t.state === 'done' || t.state === 'cleaning')) await FP.refreshFiles();
  } catch(e) { FP.toast(e.message); } finally { polling = false; }
 }
+document.addEventListener('fp:logout',()=>{signature='';box.replaceChildren();box.hidden=true;});
 setInterval(() => { if (!document.querySelector('#page-files').classList.contains('hidden')) load(); }, 4000);
 document.querySelector('#refresh-btn').addEventListener('click', load);
 new MutationObserver(load).observe(document.querySelector('#app'), { attributes: true, attributeFilter: ['class'] });

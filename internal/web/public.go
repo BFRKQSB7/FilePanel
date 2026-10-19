@@ -35,16 +35,16 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 {{if .Summary}}<p>{{.Summary}}</p>{{end}}
 {{if .Cover}}<div class="banner"><img src="/a/{{.Cover}}" alt="{{.Name}} 封面"></div>{{end}}
 {{if .Notice}}<div class="notice {{if .NoticeErr}}err{{end}}" role="status">{{.Notice}}</div>{{end}}
-<div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 下载链接 5 分钟内有效</small></div></div>
+<div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div>
 {{if .Lines}}<form action="{{.Base}}/s/{{.Slug}}/get" method="get"><label>下载线路 <select name="relay"><option value="">自动（管理员默认出口）</option><option value="local">本机出口</option>{{range .Lines}}<option value="{{.ID}}">{{.Label}}</option>{{end}}</select></label> <button class="btn ghost" type="submit">使用所选线路</button></form>{{end}}
 {{if .Shots}}<div class="shots">{{range .Shots}}<img src="/a/{{.}}" alt="截图" loading="lazy">{{end}}</div>{{end}}
 {{if .Body}}<div class="md">{{.Body}}</div>{{end}}
-<dl class="facts"><dt>文件名</dt><dd>{{.FileName}}</dd><dt>大小</dt><dd>{{size .Size}}</dd><dt>SHA-256</dt><dd>{{.SHA}}</dd></dl></article>
+<dl class="facts"><dt>文件名</dt><dd>{{.FileName}}</dd><dt>大小</dt><dd>{{size .Size}}</dd><dt>文件校验码（SHA-256）</dt><dd>{{.SHA}}<br><small>用于核对文件完整性，普通下载无需填写。</small></dd></dl></article>
 {{template "foot" .}}{{end}}
 {{define "preview"}}{{template "head" .}}
 <section class="hero"><h1>资源下载</h1><p>{{.Intro}}</p></section>
 <div class="grid"><a class="card" href="#"><div class="cover">▤</div><div class="card-body"><h2>示例资源</h2><p>这是预览用的示例卡片，不会出现在公开主页。</p><div class="meta"><span class="tag">1.0.0</span><span>12.3 MB</span></div></div></a></div>
-<article class="article"><h1>示例资源</h1><p class="sub">版本 1.0.0 · 12.3 MB</p><div class="dl"><a class="btn big" href="#">{{.Button}}</a><div>example.bin<small>支持断点续传 · 下载链接 5 分钟内有效</small></div></div></article>
+<article class="article"><h1>示例资源</h1><p class="sub">版本 1.0.0 · 12.3 MB</p><div class="dl"><a class="btn big" href="#">{{.Button}}</a><div>example.bin<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div></article>
 {{template "foot" .}}{{end}}
 {{define "error"}}{{template "head" .}}
 <div class="empty" role="alert"><strong>{{.Heading}}</strong>{{.Message}}<p>{{if .Retry}}<a class="btn" href="{{.Retry}}">{{.RetryText}}</a> {{end}}<a class="btn ghost" href="{{.Back}}">返回</a></p></div>
