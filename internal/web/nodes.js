@@ -46,6 +46,8 @@ function draw() {
   card.append(field('Storage：允许新文件写入', storage), field('Relay：允许作为访客出口', out), field('备注', note), field('地区（自动失败显示未知）', region), field('手动覆盖地区', manual), field('启用用量保护', protect), field('周期额度（GB；0 为未知）', quota), field('计费口径', basis));
   card.append(button('保存节点设置', async () => { await FP.api('/api/nodes/' + n.id, json('PUT', { storage: storage.checked, relay: out.checked, note: note.value, region: region.value, manual_region: manual.checked, policy: { ...n.policy, protect: protect.checked, quota_bytes: Math.round(Number(quota.value) * 1e9), basis: basis.value } })); FP.toast('已保存，将在下一次控制校验同步'); await load(); }),
    button('检查面板到节点', async () => { await FP.api('/api/nodes/' + n.id + '/probe', { method: 'POST' }); await load(); }),
+   button('检查节点预置更新', async () => { const s = await FP.api('/api/nodes/' + n.id + '/update'); FP.toast('节点更新：' + s.phase + (s.version ? ' · ' + s.version : '') + (s.error ? ' · ' + s.error : '')); }),
+   button('更新此节点', async () => { if (!confirm('仅更新此节点，维护期间暂停该节点传输。继续？')) return; await FP.api('/api/nodes/' + n.id + '/update', { method: 'POST' }); FP.toast('此节点更新已提交，恢复后可检查结果'); }),
    button('撤销节点凭据', async () => { if (!confirm('撤销后该节点停止接受授权，已有文件仍保留。继续？')) return; await FP.api('/api/nodes/' + n.id + '/revoke', { method: 'POST' }); await load(); }),
    button('移除已撤销且无文件的记录', async () => { await FP.api('/api/nodes/' + n.id, { method: 'DELETE' }); await load(); })); content.append(card);
  }

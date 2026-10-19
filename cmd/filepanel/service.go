@@ -5,6 +5,7 @@ import (
 	"filepanel/internal/install"
 	"flag"
 	"log/slog"
+	"os"
 	"path/filepath"
 )
 
@@ -21,6 +22,8 @@ func serviceRun(args []string) error {
 	if e != nil {
 		return e
 	}
+	os.Setenv("FILEPANEL_INSTANCE", c.Instance)
+	os.Setenv("FILEPANEL_MAINTENANCE", filepath.Join(filepath.Dir(*path), "config", "maintenance"))
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&install.Log{Path: filepath.Join(filepath.Dir(*path), "logs", "service.log")}, nil)))
 	e = run(install.Args(c))
 	if e != nil {

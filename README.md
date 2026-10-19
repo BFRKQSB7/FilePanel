@@ -2,7 +2,7 @@
 
 **English** | [**简体中文**](README.zh-CN.md)
 
-A lightweight single-admin file hosting and publishing panel for personal VPS instances and NAT servers. The current implementation uses one Go binary with embedded web assets and SQLite; extra storage and download nodes are planned.
+A lightweight single-admin file hosting and publishing panel for personal VPS instances and NAT servers. One Go binary embeds the web assets and SQLite, with optional storage and download nodes.
 
 ## Features and scope
 
@@ -11,7 +11,7 @@ A lightweight single-admin file hosting and publishing panel for personal VPS in
 - Site branding with images and colors, plus versioned ZIP export and isolated preview/confirmation before import.
 - A Chinese administration interface at `/admin`, public home page at `/` and resource pages at `/s/{slug}`.
 
-The [execution index](tasks/README.md) is the only task-status source. Domain/HTTPS setup, optional nodes, cross-node moves, installers, updates and release acceptance remain future work. This is a development snapshot with no tagged release or production-readiness claim.
+Domain/HTTPS setup, optional nodes, recoverable cross-node moves, Linux service installation, signed local updates and consistent backup/restore are implemented. The [execution index](tasks/README.md) is the only task-status source and records release acceptance boundaries. Local signed fixtures do not constitute an externally published production release.
 
 ## Quick start
 
@@ -28,7 +28,7 @@ go build -trimpath -o filepanel ./cmd/filepanel
 
 On Windows, build with `go build -trimpath -o filepanel.exe ./cmd/filepanel` and use `./filepanel.exe` for both commands. Open `http://127.0.0.1:8080/admin`, enter the one-time token, set an administrator password of 12–72 bytes, then log in. The token is displayed once and expires after 30 minutes; initialize before publishing the service. Use the same data directory for both commands, and stop the server before issuing a replacement initialization token.
 
-The default listener is local to the machine. For remote development, use an SSH tunnel. The server has no built-in TLS yet; configure an HTTPS reverse proxy before exposing administration sessions over an untrusted network, and enable secure cookies below.
+The default listener is local to the machine. For remote development, use an SSH tunnel where permitted. Configure the built-in HTTPS setup or an existing trusted HTTPS reverse proxy before exposing administration sessions over an untrusted network.
 
 ## Configuration
 
@@ -38,7 +38,7 @@ The default listener is local to the machine. For remote development, use an SSH
 | `--listen` / `FILEPANEL_LISTEN` | `127.0.0.1:8080` | HTTP listener for `serve` |
 | `--secure-cookie` / `FILEPANEL_SECURE_COOKIE` | `false` | Enable behind an HTTPS reverse proxy; requires HTTPS in the browser |
 
-Explicit flags override environment defaults. Uploads currently have a 10 GiB per-file ceiling and a fixed 1 GiB disk reserve. The reserve blocks writes on a 1 GB disk; adapting it is a known release prerequisite. An unknown traffic quota does not establish a total traffic cap.
+Explicit flags override environment defaults. Uploads have a 10 GiB per-file ceiling. Disk protection retains the larger of 16 MiB and 5% of capacity, plus in-flight write budgets; `--reserve-bytes` accepts a larger nonzero reserve. An unknown traffic quota does not establish a total traffic cap. See [signed updates and consistent backup/restore (Chinese)](docs/更新与备份恢复.md) for offline packages and maintenance.
 
 The intended first-release platforms are Alpine/OpenRC, Debian/systemd and Ubuntu 24.04 LTS/systemd. See the [local installation and uninstallation guide (Chinese)](docs/安装与本机卸载.md) for offline packages and service maintenance. Cross-compilation does not verify service lifecycles, NAT access or the 128 MB RAM / 1 GB disk target. Current evidence and gaps live in the execution index.
 

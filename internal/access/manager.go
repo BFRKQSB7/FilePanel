@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"filepanel/internal/files"
 	"fmt"
 	"net"
 	"net/http"
@@ -144,9 +145,11 @@ func (m *Manager) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	if err = m.space.CheckSpace(uint64(len(raw)*2 + 65536)); err != nil {
+	release, err := files.HoldSpace(m.space, uint64(len(raw)*2+65536))
+	if err != nil {
 		return err
 	}
+	defer release()
 	return m.db.SetSetting(settingKey, string(raw))
 }
 

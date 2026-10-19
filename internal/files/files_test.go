@@ -215,13 +215,10 @@ func TestRecoverInterruptedDelete(t *testing.T) {
 
 func TestSpaceReservationSharesConcurrentBudgetAndRejectsLowSpace(t *testing.T) {
 	m, _, dir := testManager(t)
-	_, free, _, err := m.db.DiskInfo(m.root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if free < 64<<10 {
-		t.Skip("test filesystem has insufficient space for reservation setup")
-	}
+	// Building other packages may change real free bytes between checks.
+	// This test controls capacity, not the development machine's disk activity.
+	free := uint64(64 << 20)
+	m.diskInfo = func(string) (uint64, uint64, uint64, error) { return 1 << 30, free, (1 << 30) - free, nil }
 	m.reserve = free - 32<<10
 	if err := m.reserveChunk(32 << 10); err != nil {
 		t.Fatalf("first reservation rejected: %v", err)
@@ -230,10 +227,6 @@ func TestSpaceReservationSharesConcurrentBudgetAndRejectsLowSpace(t *testing.T) 
 		t.Fatal("concurrent reservation exceeded shared free-space budget")
 	}
 	m.releaseChunk(32 << 10)
-	_, free, _, err = m.db.DiskInfo(m.root)
-	if err != nil {
-		t.Fatal(err)
-	}
 	m.reserve = free
 	if _, err := m.Upload(context.Background(), "low-space.bin", 4, strings.NewReader("data")); err == nil {
 		t.Fatal("upload accepted without space beyond reserved floor")

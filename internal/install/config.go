@@ -3,9 +3,11 @@ package install
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"filepanel/internal/release"
 	"fmt"
 	"io"
 	"net"
@@ -20,12 +22,13 @@ import (
 var instanceName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,19}$`)
 
 type Config struct {
-	Instance string `json:"instance"`
-	Role     string `json:"role"`
-	Data     string `json:"data"`
-	Listen   string `json:"listen"`
-	LowPorts bool   `json:"low_ports"`
-	Reserve  uint64 `json:"reserve_bytes"`
+	Instance  string `json:"instance"`
+	Role      string `json:"role"`
+	Data      string `json:"data"`
+	Listen    string `json:"listen"`
+	LowPorts  bool   `json:"low_ports"`
+	Reserve   uint64 `json:"reserve_bytes"`
+	UpdateKey string `json:"update_key,omitempty"`
 	// Join arguments are read from a private input file, never stored in the manifest.
 	JoinFile string `json:"-"`
 }
@@ -48,6 +51,12 @@ func validInstance(s string) error {
 }
 
 func Validate(c Config) error {
+	if c.UpdateKey != "" {
+		k, e := base64.StdEncoding.DecodeString(c.UpdateKey)
+		if e != nil || len(k) != 32 {
+			return errors.New("更新公钥须为 base64 Ed25519 公钥")
+		}
+	}
 	if e := validInstance(c.Instance); e != nil {
 		return e
 	}
@@ -110,7 +119,20 @@ func VerifyRelease(path, pin string) (string, Artifact, error) {
 	}
 	var r Release
 	if e = decodeFile(path, &r); e != nil {
-		return "", Artifact{}, e
+		// The independently pinned bootstrap may also use the signed T08 format.
+		var env release.Envelope
+		if e = release.Read(path, &env, 1<<20); e != nil {
+			return "", Artifact{}, e
+		}
+		var m release.Manifest
+		if e = release.Decode(env.Manifest, &m); e != nil || m.Product != "FilePanel" {
+			return "", Artifact{}, errors.New("发布清单无效")
+		}
+		r.Version = m.Version
+		r.Artifacts = map[string]Artifact{}
+		for k, v := range m.Artifacts {
+			r.Artifacts[k] = Artifact{v.File, v.SHA256, v.Size}
+		}
 	}
 	a, ok := r.Artifacts["linux-"+runtime.GOARCH]
 	if !ok || r.Version == "" || a.Size <= 0 || len(a.SHA256) != 64 || filepath.Base(a.File) != a.File || a.File == "." || strings.ContainsAny(a.File, "/\\") {

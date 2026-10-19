@@ -14,14 +14,16 @@ import (
 	"filepanel/internal/auth"
 	"filepanel/internal/download"
 	"filepanel/internal/files"
+	"filepanel/internal/install"
 	"filepanel/internal/nodes"
 	"filepanel/internal/profile"
+	"filepanel/internal/release"
 	"filepanel/internal/share"
 	"filepanel/internal/store"
 	"filepanel/internal/usage"
 )
 
-//go:embed index.html admin-ext.js access.js nodes.js moves.js
+//go:embed index.html admin-ext.js access.js nodes.js moves.js update.js
 var assets embed.FS
 
 type Server struct {
@@ -120,7 +122,8 @@ func NewServer(d Deps, secure bool) http.Handler {
 	mux.HandleFunc("PATCH /api/files/{id}", server.rename)
 	mux.HandleFunc("DELETE /api/files/{id}", server.remove)
 	mux.HandleFunc("GET /api/data", server.data)
-	return securityHeaders(mux)
+	server.updateRoutes(mux)
+	return securityHeaders(install.MaintenanceGate(mux))
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -150,7 +153,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "数据库不可用")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, release.Info())
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {

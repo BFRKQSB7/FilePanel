@@ -18,6 +18,7 @@ import (
 	"filepanel/internal/auth"
 	"filepanel/internal/download"
 	"filepanel/internal/files"
+	"filepanel/internal/release"
 	"filepanel/internal/share"
 	"filepanel/internal/store"
 	"filepanel/internal/usage"
@@ -247,11 +248,13 @@ func (p *Panel) Probe(ctx context.Context, id string) error {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	var out struct {
-		ID      string `json:"id"`
-		PanelID string `json:"panel_id"`
+		ID       string `json:"id"`
+		PanelID  string `json:"panel_id"`
+		Protocol int    `json:"protocol"`
+		Schema   int    `json:"schema"`
 	}
 	e = call(ctx, c, "GET", n.Endpoint, prefix+"/health", n.Credential, nil, &out)
-	if e == nil && (out.ID != n.ID || out.PanelID != p.ID()) {
+	if e == nil && (out.ID != n.ID || out.PanelID != p.ID() || out.Protocol != release.Protocol || out.Schema != release.Schema) {
 		e = ErrDenied
 	}
 	message := ""

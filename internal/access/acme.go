@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"filepanel/internal/files"
 	"fmt"
 	"net/http"
 	"strings"
@@ -52,9 +53,11 @@ func (m *Manager) accountKey() (crypto.Signer, error) {
 		return nil, err
 	}
 	data := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-	if err = m.space.CheckSpace(uint64(len(data)*2 + 65536)); err != nil {
+	release, err := files.HoldSpace(m.space, uint64(len(data)*2+65536))
+	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err = m.db.SetSetting(keyName, string(data)); err != nil {
 		return nil, err
 	}

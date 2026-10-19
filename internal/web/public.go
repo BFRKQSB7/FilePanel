@@ -248,7 +248,9 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	notice, ok := s.quotaNotice(r)
-	if !s.needsLocalBudget(r,sh.FileID){notice,ok="",true}
+	if !s.needsLocalBudget(r, sh.FileID) {
+		notice, ok = "", true
+	}
 	data.CanDownload, data.Notice, data.NoticeErr = ok, notice, !ok
 	s.renderPublic(w, http.StatusOK, "share", data)
 }
@@ -263,7 +265,7 @@ func (s *Server) getLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := s.clientIP(r)
-	if err := s.meter.Available(ip); err != nil && s.needsLocalBudget(r,sh.FileID) {
+	if err := s.meter.Available(ip); err != nil && s.needsLocalBudget(r, sh.FileID) {
 		derr := downloadError(err)
 		s.errorPage(w, r, derr.Status, derr.Message, "说明页仍可浏览，稍后可再次尝试下载。", "/s/"+sh.Slug+"/get", "重新尝试", "/s/"+sh.Slug)
 		return

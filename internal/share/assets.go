@@ -2,6 +2,7 @@ package share
 
 import (
 	"errors"
+	"filepanel/internal/files"
 	"io"
 	"net/http"
 	"os"
@@ -37,9 +38,11 @@ func (m *Manager) AddAsset(fileID string, src io.Reader) (Asset, error) {
 	if !imageTypes[mime] {
 		return Asset{}, errors.New("仅支持 PNG、JPEG、GIF、WebP 图片")
 	}
-	if err := m.files.CheckSpace(uint64(len(data))); err != nil {
+	release, err := files.HoldSpace(m.files, uint64(len(data)))
+	if err != nil {
 		return Asset{}, err
 	}
+	defer release()
 	id := randomString(18)
 	path := filepath.Join(m.dir, id)
 	if err := os.WriteFile(path, data, 0600); err != nil {

@@ -21,7 +21,7 @@ import (
 )
 
 const DefaultMaxUpload int64 = 10 << 30
-const defaultReserve uint64 = 1 << 30
+const defaultReserve uint64 = 16 << 20
 const chunkSize = 64 << 10
 
 type Item struct {
@@ -44,6 +44,7 @@ type Manager struct {
 	cond        *sync.Cond
 	readers     map[string]int
 	reservedNow uint64
+	diskInfo    func(string) (uint64, uint64, uint64, error)
 }
 
 func New(s *store.Store, dataDir string, maxUpload int64, reserve uint64) (*Manager, error) {
@@ -69,6 +70,7 @@ func New(s *store.Store, dataDir string, maxUpload int64, reserve uint64) (*Mana
 		reserve = defaultReserve
 	}
 	m := &Manager{db: s, root: root, objects: objects, temp: temp, maxUpload: maxUpload, reserve: reserve, readers: make(map[string]int)}
+	m.diskInfo = s.DiskInfo
 	m.cond = sync.NewCond(&m.mu)
 	if err := m.Recover(); err != nil {
 		return nil, err
@@ -112,7 +114,7 @@ func cleanName(name string) (string, error) {
 func (m *Manager) reserveChunk(n uint64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	total, free, _, err := m.db.DiskInfo(m.root)
+	total, free, _, err := m.diskInfo(m.root)
 	if err != nil {
 		return fmt.Errorf("读取磁盘空间失败: %w", err)
 	}
@@ -553,7 +555,7 @@ func (m *Manager) Recover() error {
 func (m *Manager) CheckSpace(n uint64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	total, free, _, err := m.db.DiskInfo(m.root)
+	total, free, _, err := m.diskInfo(m.root)
 	if err != nil {
 		return fmt.Errorf("读取磁盘空间失败: %w", err)
 	}
@@ -565,4 +567,26 @@ func (m *Manager) CheckSpace(n uint64) error {
 		return errors.New("可用空间不足，已保留系统安全空间")
 	}
 	return nil
+}
+
+// ReserveSpace keeps small metadata/material writes in the same in-flight
+// budget as uploads. Release is idempotent and must be deferred by the caller.
+func (m *Manager) ReserveSpace(n uint64) (func(), error) {
+	if e := m.reserveChunk(n); e != nil {
+		return nil, e
+	}
+	var once sync.Once
+	return func() { once.Do(func() { m.releaseChunk(n) }) }, nil
+}
+
+// HoldSpace lets the existing narrow test spaces remain usable while real
+// managers reserve bytes across the complete filesystem write.
+func HoldSpace(s interface{ CheckSpace(uint64) error }, n uint64) (func(), error) {
+	if r, ok := s.(interface{ ReserveSpace(uint64) (func(), error) }); ok {
+		return r.ReserveSpace(n)
+	}
+	if e := s.CheckSpace(n); e != nil {
+		return nil, e
+	}
+	return func() {}, nil
 }

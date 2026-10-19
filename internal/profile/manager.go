@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"filepanel/internal/files"
 	"filepanel/internal/store"
 )
 
@@ -271,9 +272,11 @@ func (m *Manager) Stage(c Candidate) (string, error) {
 }
 
 func (m *Manager) stage(c Candidate) (string, error) {
-	if err := m.space.CheckSpace(c.TotalBytes()); err != nil {
+	release, err := files.HoldSpace(m.space, c.TotalBytes())
+	if err != nil {
 		return "", fmt.Errorf("%w（%v）", ErrSpace, err)
 	}
+	defer release()
 	var raw [18]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", err

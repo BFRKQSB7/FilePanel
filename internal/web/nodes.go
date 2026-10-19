@@ -17,6 +17,30 @@ func (s *Server) nodeRoutes(mux *http.ServeMux) {
 	}
 	s.nodes.Routes(mux)
 	s.moveRoutes(mux)
+	for _, method := range []string{"GET", "POST"} {
+		mux.HandleFunc(method+" /api/nodes/{id}/update", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "POST" {
+				if _, ok := s.requireCSRF(w, r); !ok {
+					return
+				}
+			} else {
+				if _, ok := s.requireSession(w, r); !ok {
+					return
+				}
+			}
+			if r.ContentLength != 0 {
+				writeError(w, 400, "节点更新不接受参数")
+				return
+			}
+			b, e := s.nodes.SoftwareUpdate(r.Context(), r.PathValue("id"), r.Method == "POST")
+			if e != nil {
+				writeError(w, 503, "节点离线、不兼容或维护代理未就绪，未安排后台更新")
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(b)
+		})
+	}
 	mux.HandleFunc("POST /api/nodes/migration/export", s.nodeMigrationExport)
 	mux.HandleFunc("POST /api/nodes/migration/preview", s.nodeMigrationImport)
 	mux.HandleFunc("POST /api/nodes/migration/apply", s.nodeMigrationImport)

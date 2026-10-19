@@ -12,6 +12,7 @@ import (
 
 	"filepanel/internal/download"
 	"filepanel/internal/files"
+	"filepanel/internal/release"
 	"filepanel/internal/store"
 	"filepanel/internal/usage"
 )
@@ -264,8 +265,10 @@ func (n *Daemon) Handler() http.Handler {
 			fail(w)
 			return
 		}
-		send(w, 200, map[string]string{"id": id.ID, "panel_id": id.PanelID})
+		send(w, 200, map[string]any{"id": id.ID, "panel_id": id.PanelID, "version": release.Version, "protocol": release.Protocol, "schema": release.Schema})
 	})
+	mux.HandleFunc("GET "+prefix+"/update", n.update)
+	mux.HandleFunc("POST "+prefix+"/update", n.update)
 	mux.HandleFunc("POST "+prefix+"/rebind", n.rebind)
 	mux.HandleFunc("PUT "+prefix+"/object", n.upload)
 	mux.HandleFunc("POST "+prefix+"/pull", n.pull)

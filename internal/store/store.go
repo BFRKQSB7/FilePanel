@@ -58,6 +58,19 @@ func applyMigrations(db *sql.DB) error {
 		}
 	}
 	sort.Strings(names)
+	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"); err != nil {
+		return err
+	}
+	var current int
+	if err := db.QueryRow("SELECT COALESCE(MAX(version),0) FROM schema_migrations").Scan(&current); err != nil {
+		return err
+	}
+	if len(names) > 0 {
+		last, _ := strconv.Atoi(strings.SplitN(names[len(names)-1], "_", 2)[0])
+		if current > last {
+			return errors.New("数据库 schema 比当前程序新，拒绝降级启动")
+		}
+	}
 	for _, name := range names {
 		version, err := strconv.Atoi(strings.SplitN(name, "_", 2)[0])
 		if err != nil {
@@ -67,11 +80,27 @@ func applyMigrations(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
-		if _, err := db.Exec(string(body)); err != nil {
+		var applied int
+		if err = db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version=?", version).Scan(&applied); err != nil {
+			return err
+		}
+		if applied > 0 {
+			continue
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(string(body)); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
-		if _, err := db.Exec("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)", version); err != nil {
+		if _, err := tx.Exec("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)", version); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("record migration %s: %w", name, err)
+		}
+		if err = tx.Commit(); err != nil {
+			return err
 		}
 	}
 	return nil

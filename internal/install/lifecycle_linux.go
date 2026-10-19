@@ -9,6 +9,7 @@ import (
 	"debug/elf"
 	"encoding/json"
 	"errors"
+	relmeta "filepanel/internal/release"
 	"flag"
 	"fmt"
 	"io"
@@ -38,16 +39,18 @@ type anchor struct {
 	UID  uint32
 }
 type manifest struct {
-	Version int
-	Config  Config
-	Init    string
-	User    string
-	UID     uint32
-	GID     uint32
-	Hash    string
-	State   string
-	Anchors []anchor
-	Files   map[string]string
+	Version        int
+	Config         Config
+	Init           string
+	User           string
+	UID            uint32
+	GID            uint32
+	Hash           string
+	State          string
+	Anchors        []anchor
+	Files          map[string]string
+	Sequence       uint64
+	ReleaseVersion string
 }
 
 func base(id string) string         { return "/opt/filepanel-" + id }
@@ -201,7 +204,12 @@ func (m *manifest) validate() error {
 		return errors.New("未知 init")
 	}
 	allowed := map[string]bool{base(m.Config.Instance) + "/runtime.json": true, base(m.Config.Instance) + "/filepanel": true, servicePath(m): true}
-	if len(m.Files) != 3 {
+	wantFiles := 3
+	if m.Config.UpdateKey != "" {
+		allowed[agentPath(m)] = true
+		wantFiles++
+	}
+	if len(m.Files) != wantFiles {
 		return errors.New("安装文件清单损坏")
 	}
 	for path, want := range m.Files {
@@ -256,28 +264,7 @@ func load(id string) (*manifest, error) {
 	return &m, m.validate()
 }
 func save(m *manifest) error {
-	b, e := json.MarshalIndent(m, "", "  ")
-	if e != nil {
-		return e
-	}
-	path := manifestPath(m.Config.Instance)
-	tmp := path + ".tmp"
-	f, e := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if e != nil {
-		return e
-	}
-	defer os.Remove(tmp)
-	if _, e = f.Write(b); e == nil {
-		e = f.Sync()
-	}
-	ce := f.Close()
-	if e == nil {
-		e = ce
-	}
-	if e != nil {
-		return e
-	}
-	return os.Rename(tmp, path)
+	return atomicJSON(manifestPath(m.Config.Instance), m)
 }
 
 func Command(args []string, in io.Reader, out io.Writer) error {
@@ -286,6 +273,9 @@ func Command(args []string, in io.Reader, out io.Writer) error {
 	}
 	if len(args) == 0 {
 		return errors.New("需要 install/uninstall/maintain")
+	}
+	if args[0] == "update-agent" {
+		return updateAgent(args[1:])
 	}
 	os.Setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
 	syscall.Umask(0077)
@@ -299,6 +289,8 @@ func Command(args []string, in io.Reader, out io.Writer) error {
 	join := flags.String("join-file", "", "0600 入网 JSON（不进入命令日志）")
 	low := flags.Bool("low-ports", false, "授予绑定低端口的必要能力")
 	reserve := flags.Uint64("reserve-bytes", 16<<20, "至少 16MiB，另保留磁盘 5%")
+	updateKey := flags.String("update-key", "", "离线分发的可信 Ed25519 公钥（base64）")
+	backupPath := flags.String("backup-path", "", "实例外的私有备份目录")
 	purge := flags.Bool("purge", false, "删除本实例拥有的数据与凭据")
 	action := flags.String("action", "status", "start/stop/restart/status/init-token")
 	if e := flags.Parse(args[1:]); e != nil {
@@ -330,7 +322,7 @@ func Command(args []string, in io.Reader, out io.Writer) error {
 		if *data == "" {
 			*data = "/var/lib/filepanel-" + *id
 		}
-		return installInstance(Config{Instance: *id, Role: *role, Data: *data, Listen: *listen, LowPorts: *low, Reserve: *reserve, JoinFile: *join}, *rel, *pin, out)
+		return installInstance(Config{Instance: *id, Role: *role, Data: *data, Listen: *listen, LowPorts: *low, Reserve: *reserve, JoinFile: *join, UpdateKey: *updateKey}, *rel, *pin, out)
 	case "uninstall":
 		m, e := load(*id)
 		if e != nil {
@@ -338,6 +330,9 @@ func Command(args []string, in io.Reader, out io.Writer) error {
 		}
 		return uninstall(m, *purge, in, out)
 	case "maintain":
+		if *action == "recover-update" {
+			return recoverUpdate(*id, out)
+		}
 		m, e := load(*id)
 		if e != nil {
 			return e
@@ -346,6 +341,14 @@ func Command(args []string, in io.Reader, out io.Writer) error {
 			return errors.New("实例未处于 active；请用原配置重新安装")
 		}
 		switch *action {
+		case "stage-update":
+			return stageUpdate(m, *rel, out)
+		case "apply-update":
+			return applyUpdate(m, out)
+		case "backup":
+			return instanceBackup(m, *backupPath, out)
+		case "restore":
+			return instanceRestore(m, *backupPath, out)
 		case "start", "stop", "restart", "status":
 			if e = service(m, *action); e != nil {
 				return e
@@ -435,6 +438,15 @@ func installInstance(c Config, release, pin string, out io.Writer) (err error) {
 	if e != nil {
 		return e
 	}
+	var initialVersion string
+	initialSequence, _ := strconv.ParseUint(relmeta.Sequence, 10, 64)
+	if c.UpdateKey != "" {
+		r, _, e := signed(&manifest{Config: c}, release)
+		if e != nil {
+			return e
+		}
+		initialSequence, initialVersion = r.Sequence, r.Version
+	}
 	f, e := elf.Open(src)
 	if e != nil {
 		return e
@@ -504,6 +516,11 @@ func installInstance(c Config, release, pin string, out io.Writer) (err error) {
 		if _, e = os.Lstat(servicePath(probe)); !os.IsNotExist(e) {
 			return errors.New("服务名冲突，拒绝覆盖")
 		}
+		if c.UpdateKey != "" {
+			if _, e = os.Lstat(agentPath(probe)); !os.IsNotExist(e) {
+				return errors.New("维护服务名冲突")
+			}
+		}
 		if init == "openrc" {
 			if e = command("/usr/sbin/addgroup", "-S", name); e != nil {
 				return e
@@ -525,6 +542,7 @@ func installInstance(c Config, release, pin string, out io.Writer) (err error) {
 		uid, _ := strconv.ParseUint(u.Uid, 10, 32)
 		gid, _ := strconv.ParseUint(u.Gid, 10, 32)
 		m = &manifest{Version: 1, Config: c, Init: init, User: name, UID: uint32(uid), GID: uint32(gid), Hash: a.SHA256, State: "installing", Files: map[string]string{}}
+		m.Sequence, m.ReleaseVersion = initialSequence, initialVersion
 		// Before the durable manifest exists, no daemon runs. Roll back only paths
 		// successfully created by this invocation, in reverse order, non-recursively.
 		var created []string
@@ -591,7 +609,15 @@ func installInstance(c Config, release, pin string, out io.Writer) (err error) {
 				return e
 			}
 		}
-		for _, path := range []string{root + "/runtime.json", root + "/filepanel", servicePath(m)} {
+		paths := []string{root + "/runtime.json", root + "/filepanel", servicePath(m)}
+		if c.UpdateKey != "" {
+			if e = putAgent(m); e != nil {
+				return e
+			}
+			created = append(created, agentPath(m))
+			paths = append(paths, agentPath(m))
+		}
+		for _, path := range paths {
 			sum, _, e := digestFile(path)
 			if e != nil {
 				return e
@@ -614,6 +640,9 @@ func installInstance(c Config, release, pin string, out io.Writer) (err error) {
 			if e = put(servicePath(m), []byte(unit(m)), 0644); e != nil {
 				return e
 			}
+			if e = putAgent(m); e != nil {
+				return e
+			}
 			if init == "openrc" {
 				if e = os.Chmod(servicePath(m), 0755); e != nil {
 					return e
@@ -633,7 +662,7 @@ func installInstance(c Config, release, pin string, out io.Writer) (err error) {
 		}
 	}()
 	if c.LowPorts && init == "openrc" {
-		if e = command("/usr/sbin/setcap", "cap_net_bind_service=+ep", base(c.Instance)+"/filepanel"); e != nil {
+		if e = lowPortCapability(base(c.Instance) + "/filepanel"); e != nil {
 			return e
 		}
 	}
@@ -688,6 +717,12 @@ func installInstance(c Config, release, pin string, out io.Writer) (err error) {
 	if e = save(m); e != nil {
 		return e
 	}
+	if e = agentEnable(m, true); e != nil {
+		return e
+	}
+	if e = agentService(m, "start"); e != nil {
+		return e
+	}
 	fmt.Fprintf(out, "本机实例 %s 已安装并启动（%s，专用用户 %s）。\n", c.Instance, init, m.User)
 	if c.Role == "panel" {
 		fmt.Fprintf(out, "候选入口 http://%s/admin；公网/NAT 可达性须另行核对。\n", c.Listen)
@@ -716,17 +751,12 @@ func ready(c Config) error {
 	address := net.JoinHostPort(host, port)
 	client := http.Client{Timeout: time.Second}
 	for i := 0; i < 40; i++ {
-		if c.Role == "panel" {
-			if r, e := client.Get("http://" + address + "/api/status"); e == nil {
+		{
+			if r, e := client.Get("http://" + address + "/healthz"); e == nil {
 				r.Body.Close()
 				if r.StatusCode == 200 {
 					return nil
 				}
-			}
-		} else {
-			if conn, e := net.DialTimeout("tcp", address, 200*time.Millisecond); e == nil {
-				conn.Close()
-				return nil
 			}
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -842,6 +872,12 @@ func uninstall(m *manifest, purge bool, in io.Reader, out io.Writer) error {
 		}
 	}
 	if m.State != "uninstalled" {
+		if e = agentService(m, "stop"); e != nil {
+			return e
+		}
+		if e = agentEnable(m, false); e != nil {
+			return e
+		}
 		if e = service(m, "stop"); e != nil {
 			return e
 		}
@@ -856,6 +892,11 @@ func uninstall(m *manifest, purge bool, in io.Reader, out io.Writer) error {
 		}
 		if e = os.Remove(servicePath(m)); e != nil {
 			return e
+		}
+		if m.Config.UpdateKey != "" {
+			if e = os.Remove(agentPath(m)); e != nil {
+				return e
+			}
 		}
 		if e = os.Remove(base(m.Config.Instance) + "/filepanel"); e != nil {
 			return e

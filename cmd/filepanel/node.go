@@ -15,7 +15,9 @@ import (
 
 	"filepanel/internal/download"
 	"filepanel/internal/files"
+	"filepanel/internal/install"
 	"filepanel/internal/nodes"
+	"filepanel/internal/release"
 	"filepanel/internal/store"
 	"filepanel/internal/usage"
 )
@@ -143,8 +145,21 @@ func nodeCommand(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go n.Run(ctx)
-	server := &http.Server{Addr: *listen, Handler: n.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
+	go func() {
+		if install.WaitForMaintenance(ctx) {
+			n.Run(ctx)
+		}
+	}()
+	mux := http.NewServeMux()
+	mux.Handle("/", n.Handler())
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		if e := db.DB.PingContext(r.Context()); e != nil {
+			http.Error(w, "database unavailable", 503)
+			return
+		}
+		json.NewEncoder(w).Encode(release.Info())
+	})
+	server := &http.Server{Addr: *listen, Handler: install.MaintenanceGate(mux), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
 	errs := make(chan error, 1)
 	go func() {
 		if *cert != "" {

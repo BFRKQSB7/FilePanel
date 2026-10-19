@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"filepanel/internal/auth"
 	"filepanel/internal/files"
 	"filepanel/internal/install"
+	"filepanel/internal/release"
 	"filepanel/internal/store"
 	"filepanel/internal/web"
 )
@@ -35,7 +37,11 @@ func run(args []string) error {
 		return errors.New("用法: filepanel serve [参数] | filepanel init-token [--data-dir PATH] | filepanel node join/serve [参数]")
 	}
 	switch args[0] {
-	case "install", "uninstall", "maintain":
+	case "version":
+		return json.NewEncoder(os.Stdout).Encode(release.Info())
+	case "backup":
+		return backupCommand(args[1:])
+	case "install", "uninstall", "maintain", "update-agent":
 		return install.Command(args, os.Stdin, os.Stdout)
 	case "service-run":
 		return serviceRun(args[1:])
@@ -110,7 +116,7 @@ func serve(args []string) error {
 	dataDir := flags.String("data-dir", envOr("FILEPANEL_DATA", "./data"), "受控数据目录")
 	listen := flags.String("listen", envOr("FILEPANEL_LISTEN", "127.0.0.1:8080"), "HTTP 监听地址")
 	secureCookie := flags.Bool("secure-cookie", strings.EqualFold(os.Getenv("FILEPANEL_SECURE_COOKIE"), "true"), "在 TLS 反向代理后强制 Secure Cookie")
-	reserve := flags.Uint64("reserve-bytes", 0, "非零磁盘预留；另保留磁盘 5%；0 使用原默认值")
+	reserve := flags.Uint64("reserve-bytes", 0, "非零磁盘预留；另保留磁盘 5%；0 使用默认 16MiB")
 	tlsListen := flags.String("tls-listen", envOr("FILEPANEL_TLS_LISTEN", ":443"), "自动证书 TLS 监听；仅启用自动 HTTPS 时绑定，可使用高位端口")
 	challengeListen := flags.String("challenge-listen", envOr("FILEPANEL_CHALLENGE_LISTEN", ":80"), "HTTP-01 挑战监听；公网必须通过 80 转入")
 	staging := flags.Bool("acme-staging", false, "使用 Let's Encrypt staging；只验证流程，不切换主入口")
@@ -166,7 +172,6 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	deps.Access.Start(handler)
 	serverErrors := make(chan error, 1)
 	go func() {
 		slog.Info("FilePanel 正在监听", "address", *listen, "data_dir", root)
@@ -174,7 +179,12 @@ func serve(args []string) error {
 	}()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go deps.Nodes.Run(ctx)
+	go func() {
+		if install.WaitForMaintenance(ctx) {
+			deps.Access.Start(handler)
+			deps.Nodes.Run(ctx)
+		}
+	}()
 	select {
 	case err := <-serverErrors:
 		if errors.Is(err, http.ErrServerClosed) {
