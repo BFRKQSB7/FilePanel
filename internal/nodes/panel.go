@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -849,6 +848,7 @@ func (p *Panel) ConfigureEndpoint(endpoint, ca string) error {
 	return p.DB.SetSetting("node_panel_ca", ca)
 }
 func (p *Panel) JoinCommand(endpoint, ticket string) string {
-	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-	return fmt.Sprintf("./filepanel node join --panel %s --panel-id %s --ticket %s --endpoint 'https://节点域名:端口' --data-dir ./node-data", quote(endpoint), quote(p.ID()), quote(ticket))
+	ca, _, _ := p.DB.Setting("node_panel_ca")
+	b, _ := json.MarshalIndent(map[string]string{"panel": endpoint, "panel_id": p.ID(), "ticket": ticket, "endpoint": "https://节点域名:映射端口", "ca": ca, "node_ca": ""}, "", "  ")
+	return "umask 077\ncat > ./filepanel-join.json <<'FILEPANEL_JOIN'\n" + string(b) + "\nFILEPANEL_JOIN\nsudo ./filepanel install --instance node --role node --listen 127.0.0.1:8081 --release ./release.json --manifest-sha256 \"${FILEPANEL_MANIFEST_SHA256:?请先填写已核验的发布清单SHA256}\" --join-file ./filepanel-join.json"
 }

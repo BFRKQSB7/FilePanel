@@ -18,6 +18,7 @@ import (
 	"filepanel/internal/access"
 	"filepanel/internal/auth"
 	"filepanel/internal/files"
+	"filepanel/internal/install"
 	"filepanel/internal/store"
 	"filepanel/internal/web"
 )
@@ -34,6 +35,10 @@ func run(args []string) error {
 		return errors.New("用法: filepanel serve [参数] | filepanel init-token [--data-dir PATH] | filepanel node join/serve [参数]")
 	}
 	switch args[0] {
+	case "install", "uninstall", "maintain":
+		return install.Command(args, os.Stdin, os.Stdout)
+	case "service-run":
+		return serviceRun(args[1:])
 	case "serve":
 		return serve(args[1:])
 	case "init-token":
@@ -41,7 +46,7 @@ func run(args []string) error {
 	case "node":
 		return nodeCommand(args[1:])
 	case "help", "-h", "--help":
-		fmt.Println("用法: filepanel serve [--data-dir PATH] [--listen ADDRESS]\n      filepanel init-token [--data-dir PATH]\n      filepanel node join/serve [参数；使用 --help 查看]")
+		fmt.Println("用法: filepanel serve [--data-dir PATH] [--listen ADDRESS]\n      filepanel init-token [--data-dir PATH]\n      filepanel node join/serve [参数；使用 --help 查看]\n      filepanel install/uninstall/maintain [--help]")
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
@@ -105,6 +110,7 @@ func serve(args []string) error {
 	dataDir := flags.String("data-dir", envOr("FILEPANEL_DATA", "./data"), "受控数据目录")
 	listen := flags.String("listen", envOr("FILEPANEL_LISTEN", "127.0.0.1:8080"), "HTTP 监听地址")
 	secureCookie := flags.Bool("secure-cookie", strings.EqualFold(os.Getenv("FILEPANEL_SECURE_COOKIE"), "true"), "在 TLS 反向代理后强制 Secure Cookie")
+	reserve := flags.Uint64("reserve-bytes", 0, "非零磁盘预留；另保留磁盘 5%；0 使用原默认值")
 	tlsListen := flags.String("tls-listen", envOr("FILEPANEL_TLS_LISTEN", ":443"), "自动证书 TLS 监听；仅启用自动 HTTPS 时绑定，可使用高位端口")
 	challengeListen := flags.String("challenge-listen", envOr("FILEPANEL_CHALLENGE_LISTEN", ":80"), "HTTP-01 挑战监听；公网必须通过 80 转入")
 	staging := flags.Bool("acme-staging", false, "使用 Let's Encrypt staging；只验证流程，不切换主入口")
@@ -132,7 +138,10 @@ func serve(args []string) error {
 		return err
 	}
 	a := auth.New(s)
-	manager, err := files.New(s, root, files.DefaultMaxUpload, 0)
+	if *reserve > 0 && *reserve < 16<<20 {
+		return errors.New("安全预留不得少于 16MiB")
+	}
+	manager, err := files.New(s, root, files.DefaultMaxUpload, *reserve)
 	if err != nil {
 		return err
 	}

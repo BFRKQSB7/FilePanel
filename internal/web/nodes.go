@@ -189,7 +189,7 @@ func (s *Server) nodeTicket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "入网票据生成失败")
 		return
 	}
-	writeJSON(w, 201, map[string]string{"command": s.nodes.JoinCommand(in.Endpoint, ticket), "note": "命令使用已构建二进制；票据 5 分钟内仅可使用一次。私有 CA 使用 --ca 与 --node-ca 文件。node serve 另行启动，需可信 HTTPS 端点。"})
+	writeJSON(w, 201, map[string]string{"command": s.nodes.JoinCommand(in.Endpoint, ticket), "note": "使用已校验的本地发布包；先填写节点 HTTPS 地址与可信清单 SHA256。票据 5 分钟内一次有效；入网文件使用后删除。安装器成功后自动启用节点服务；公开 HTTPS 反代仍由管理员配置。"})
 }
 
 func (s *Server) remoteAdmin(w http.ResponseWriter, r *http.Request) bool {

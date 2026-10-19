@@ -40,7 +40,7 @@ The default listener is local to the machine. For remote development, use an SSH
 
 Explicit flags override environment defaults. Uploads currently have a 10 GiB per-file ceiling and a fixed 1 GiB disk reserve. The reserve blocks writes on a 1 GB disk; adapting it is a known release prerequisite. An unknown traffic quota does not establish a total traffic cap.
 
-The intended first-release platforms are Alpine/OpenRC and Debian/systemd. Cross-compilation does not verify service lifecycles, NAT access or the 128 MB RAM / 1 GB disk target. Current evidence and gaps live in the execution index.
+The intended first-release platforms are Alpine/OpenRC, Debian/systemd and Ubuntu 24.04 LTS/systemd. See the [local installation and uninstallation guide (Chinese)](docs/安装与本机卸载.md) for offline packages and service maintenance. Cross-compilation does not verify service lifecycles, NAT access or the 128 MB RAM / 1 GB disk target. Current evidence and gaps live in the execution index.
 
 ## Development and verification
 

@@ -40,7 +40,7 @@ Windows 构建命令改为 `go build -trimpath -o filepanel.exe ./cmd/filepanel`
 
 显式参数覆盖环境变量默认值。目前单文件上传上限为 10 GiB，磁盘保留空间固定为 1 GiB，后者会阻塞 1 GB 小盘写入，适配策略是正式发布的已知前置要求。额度未知时不能视为已建立总流量上限。
 
-首版目标系统为 Alpine/OpenRC 与 Debian/systemd。交叉构建不能证明服务安装生命周期、NAT 访问或 128 MB 内存 / 1 GB 磁盘验收目标已通过，当前证据与缺口以执行索引为准。
+首版目标系统为 Alpine/OpenRC、Debian/systemd 与 Ubuntu 24.04 LTS/systemd。本地安装、服务维护与两种本机卸载见 [安装说明](docs/安装与本机卸载.md)。交叉构建不能证明服务安装生命周期、NAT 访问或 128 MB 内存 / 1 GB 磁盘验收目标已通过，当前证据与缺口以执行索引为准。
 
 ## 开发与验证
 

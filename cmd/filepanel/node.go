@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -37,6 +38,8 @@ func nodeCommand(args []string) error {
 	panel := flags.String("panel", "", "可信 HTTPS 面板源地址")
 	panelID := flags.String("panel-id", "", "设置页给出的固定面板身份")
 	ticket := flags.String("ticket", "", "5 分钟内一次性入网票据")
+	joinFile := flags.String("join-file", "", "私有 JSON 入网文件，票据不进入进程参数")
+	reserve := flags.Uint64("reserve-bytes", 0, "非零磁盘预留；另保留磁盘 5%")
 	endpoint := flags.String("endpoint", "", "节点公开 HTTPS 源地址，NAT 需包含映射端口")
 	ca := flags.String("ca", "", "面板私有 CA PEM 文件（可选）")
 	nodeCA := flags.String("node-ca", "", "节点私有 CA PEM 文件（可选）")
@@ -48,6 +51,29 @@ func nodeCommand(args []string) error {
 	}
 	if flags.NArg() != 0 {
 		return errors.New("node 不接受位置参数")
+	}
+	if *reserve > 0 && *reserve < 16<<20 {
+		return errors.New("安全预留不得少于 16MiB")
+	}
+	var inlineCA, inlineNodeCA string
+	if args[0] == "join" && *joinFile != "" {
+		b, e := os.ReadFile(*joinFile)
+		if e != nil {
+			return e
+		}
+		var input struct {
+			Panel    string `json:"panel"`
+			PanelID  string `json:"panel_id"`
+			Ticket   string `json:"ticket"`
+			Endpoint string `json:"endpoint"`
+			CA       string `json:"ca"`
+			NodeCA   string `json:"node_ca"`
+		}
+		if e = json.Unmarshal(b, &input); e != nil {
+			return errors.New("入网文件格式无效")
+		}
+		*panel, *panelID, *ticket, *endpoint = input.Panel, input.PanelID, input.Ticket, input.Endpoint
+		inlineCA, inlineNodeCA = input.CA, input.NodeCA
 	}
 	root, e := dataPath(*dir)
 	if e != nil {
@@ -82,6 +108,9 @@ func nodeCommand(args []string) error {
 		if e != nil {
 			return e
 		}
+		if *joinFile != "" {
+			panelCA, peerCA = inlineCA, inlineNodeCA
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if e = nodes.Enroll(ctx, db, nodes.Identity{Panel: *panel, PanelID: *panelID, CA: panelCA}, *ticket, *endpoint, peerCA); e != nil {
@@ -96,7 +125,7 @@ func nodeCommand(args []string) error {
 	if *cert == "" && !loopbackListen(*listen) {
 		return errors.New("明文节点监听仅允许回环地址；公开端点须使用 TLS 或可信 HTTPS 反代")
 	}
-	f, e := files.New(db, root, files.DefaultMaxUpload, 0)
+	f, e := files.New(db, root, files.DefaultMaxUpload, *reserve)
 	if e != nil {
 		return e
 	}

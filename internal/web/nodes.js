@@ -31,7 +31,7 @@ function draw() {
  content.append(field('节点连接的面板 HTTPS 地址', endpoint), field('面板私有 CA（PEM，可选）', panelCA),
   button('生成一次性接入命令', async () => { const r = await FP.api('/api/nodes/ticket', json('POST', { endpoint: endpoint.value, ca: panelCA.value })); command.value = r.command; FP.toast(r.note); }), command,
   button('复制接入命令', async () => { await navigator.clipboard.writeText(command.value); FP.toast('已复制'); }),
-  el('p', '在节点上使用已构建的 filepanel 二进制执行接入命令，将节点地址占位符换成实际 HTTPS 地址；随后运行 ./filepanel node serve --data-dir ./node-data --listen 127.0.0.1:8081，并配置可信 HTTPS 反代。也可用 --tls-cert 与 --tls-key 直接监听。NAT 端口须逐跳可达。'));
+  el('p', '在节点上准备已校验的 filepanel 与 release.json，设置 FILEPANEL_MANIFEST_SHA256 后执行接入命令。先将 JSON 内节点地址换成实际 HTTPS 地址，私有节点证书在 node_ca 填入 PEM。安装器以专用用户运行并启用自启，监听 127.0.0.1:8081；管理员配置已有 HTTPS 反代，NAT 端口须逐跳可达。入网文件使用后删除。尚未配置在线发布源。'));
  const relay = el('select'); relay.add(new Option('本机出口', ''));
  for (const n of state.nodes) if (n.relay && !n.revoked) relay.add(new Option(label(n), n.id)); relay.value = state.settings.default_relay;
  const fallback = input('checkbox', state.settings.fallback);
