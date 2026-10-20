@@ -371,6 +371,11 @@ func TestDisconnectStopsNewRangeAndActiveResponse(t *testing.T) {
 	if res.StatusCode < 400 {
 		t.Fatal("offline new Range accepted cached ticket")
 	}
+	// The short lease only exercises disconnection. Recovery must use normal
+	// timings so race instrumentation does not expire a healthy transfer.
+	relay.n.Download.RenewEvery = download.DefaultRenewEvery
+	relay.n.Download.LeaseTTL = download.DefaultLeaseTTL
+	relay.n.Download.Skew = download.DefaultSkew
 	h.offline.Store(false)
 	must(t, source.n.Heartbeat(context.Background()))
 	must(t, relay.n.Heartbeat(context.Background()))
