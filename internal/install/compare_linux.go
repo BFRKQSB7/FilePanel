@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 )
 
 func readOnly(path string) (*sql.DB, error) {
@@ -51,6 +52,23 @@ func compareDB(a, b string) error {
 	}
 	defer y.Close()
 	for _, q := range []string{"SELECT * FROM files ORDER BY id", "SELECT * FROM shares ORDER BY file_id", "SELECT * FROM assets ORDER BY id", "SELECT * FROM site_profile ORDER BY id", "SELECT * FROM settings ORDER BY key", "SELECT * FROM node_locations ORDER BY file_id", "SELECT id,credential,credential_hash,endpoint,revoked FROM nodes ORDER BY id"} {
+		// Compare every original column; additive migrations may introduce new
+		// defaults, but must never drop or change the snapshot's existing data.
+		if strings.Contains(q, "*") {
+			r, err := x.Query(q + " LIMIT 0")
+			if err != nil {
+				return err
+			}
+			cols, err := r.Columns()
+			r.Close()
+			if err != nil {
+				return err
+			}
+			for i, c := range cols {
+				cols[i] = `"` + strings.ReplaceAll(c, `"`, `""`) + `"`
+			}
+			q = strings.Replace(q, "*", strings.Join(cols, ","), 1)
+		}
 		v, e := queryBytes(x, q)
 		if e != nil {
 			return e
