@@ -49,11 +49,11 @@ async function openShare(item) {
     assets.replaceChildren();
     if (!view.assets.length) { assets.append('还没有图片。最多 8 张，每张不超过 2 MiB（PNG/JPEG/GIF/WebP）。'); return; }
     for (const a of view.assets) {
-      const img = el('img', { src: '/api/assets/' + encodeURIComponent(a.id), alt: '素材', style: 'width:84px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line)' });
+      const img = el('img', { src: '/api/assets/' + encodeURIComponent(a.id), alt: '素材', style: 'width:84px;height:56px;object-fit:cover;border-radius:var(--radius-sm);border:1px solid var(--line)' });
       const isCover = cover === a.id;
-      assets.append(el('div', { style: 'display:flex;gap:8px;align-items:center;margin:6px 0' }, img,
+      assets.append(el('div', { class: 'asset-row' }, img,
         el('button', { type: 'button', class: 'quiet-btn', text: isCover ? '封面 ✓' : '设为封面', onclick: () => { cover = isCover ? '' : a.id; FP.dirty(modal); drawAssets(); } }),
-        el('code', { text: '![说明](asset:' + a.id + ')', style: 'font-size:9px;user-select:all' }),
+        el('code', { text: '![说明](asset:' + a.id + ')', style: 'font-size:12px;user-select:all' }),
         el('button', { type: 'button', class: 'danger-btn', text: '删除', onclick: async () => {
           if(busy)return;
           if (!confirm('立即删除这张图片？已发布页面也会受影响，关闭编辑框不会撤销。')) return;
@@ -74,7 +74,7 @@ async function openShare(item) {
 
   const link = el('input', { readonly: true, value: view.url.startsWith('/') ? location.origin + view.url : view.url, 'aria-label': '稳定分享链接' });
   const save = el('button', { type: 'button', class: 'primary-btn', text: '保存分享设置' });
-  const copy = el('button', {type:'button',class:'primary-btn',text:'复制分享链接',onclick:()=>FP.copy(link.value,link)});
+  const copy = el('button', {type:'button',class:'quiet-btn',text:'复制分享链接',onclick:()=>FP.copy(link.value,link)});
   const visit = el('a', {href:link.value,target:'_blank',rel:'noopener',class:'quiet-btn',text:'查看公开页面'});
   function savedState() { copy.disabled = !view.enabled; visit.hidden = !view.enabled; status.textContent = view.enabled ? '已公开：拥有链接的人无需登录即可访问。现在可以复制链接。' : '当前为私有。开启分享并保存后，访客才能使用此链接。'; }
   savedState();
@@ -97,14 +97,14 @@ async function openShare(item) {
     preview, assets,el('p',{text:'图片上传与删除会立即生效；其他编辑需点击保存。'})),
     el('div', { class: 'modal-actions' }, el('button', { type: 'button', class: 'quiet-btn', text: '关闭', onclick: () => closeModal() }), save));
   save.addEventListener('click', async () => {
-    if (busy) return; busy = true; save.disabled = true;
+    if (busy) return; busy = true; save.disabled = true; save.setAttribute('aria-busy','true');
     const controls=[...modal.querySelectorAll('input,textarea,button')].filter(e=>e!==save);const disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);
     try {
       view = await FP.api('/api/files/' + encodeURIComponent(item.id) + '/share', json('PUT', {
         title: title.value, version: version.value, summary: summary.value, markdown: markdown.value, button_text: button.value,
         cover_asset_id: cover, enabled: enabled.checked, featured: featured.checked }));
       FP.clean(modal); savedState(); FP.toast(enabled.checked ? '已保存并公开，可复制链接' : '已保存为私有，访客无法访问'); await FP.refreshFiles();
-    } catch (e) { status.textContent = e.message; } finally { busy = false; save.disabled = false; controls.forEach((e,i)=>e.disabled=disabled[i]);copy.disabled=!view.enabled; }
+    } catch (e) { status.textContent = e.message; } finally { busy = false; save.disabled = false; save.removeAttribute('aria-busy'); controls.forEach((e,i)=>e.disabled=disabled[i]);copy.disabled=!view.enabled; }
   });
   FP.watchDraft(modal);
   closeModal = FP.openDialog(modal,{canClose:()=>!busy});
@@ -202,11 +202,11 @@ const ROLE_LABEL = { logo: 'Logo（≤ 512 KiB）', banner: '横幅图片（首�
 const siteRoot = el('div', { id: 'profile-panel' });
 document.querySelector('#settings-appearance').append(siteRoot); FP.watchDraft(siteRoot);
 let profileBusy = false;
-const card = (...kids) => el('section', { class: 'section-card', style: 'margin-top:16px;max-width:820px' }, ...kids);
+const card = (...kids) => el('section', { class: 'section-card' }, ...kids);
 const kib = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MiB' : Math.ceil(n / 1024) + ' KiB';
 const readDataURL = (file) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
 const note = (box, text, ok) => { box.textContent = text; box.className = 'message show ' + (ok ? 'ok' : 'error'); box.style.display = text ? 'block' : 'none'; };
-const previewFrame = () => el('iframe', { sandbox: '', title: '站点预览', style: 'display:none;width:100%;height:560px;border:1px solid var(--line);border-radius:10px;background:#fff' });
+const previewFrame = () => el('iframe', { sandbox: '', title: '站点预览', class: 'preview-frame', style: 'display:none' });
 
 async function loadProfile() {
   if (profileBusy || siteRoot.dataset.dirty || !FP.csrf()) return; profileBusy = true;
@@ -229,14 +229,14 @@ function drawProfile(p) {
   const footer = el('input', { maxlength: 120, value: f.footer, placeholder: d.footer });
   const button = el('input', { maxlength: 20, value: f.button_text, placeholder: d.button_text });
   const useAccent = el('input', { type: 'checkbox', checked: !!f.accent });
-  const accent = el('input', { type: 'color', value: f.accent || '#4263eb', 'aria-label': '强调色', style: 'width:64px;padding:2px' });
+  const accent = el('input', { type: 'color', value: f.accent || '#315f9e', 'aria-label': '强调色' });
   const status = el('div', { class: 'message', style: 'display:none;margin:12px 0 0' });
   const frame = previewFrame();
 
   const boxes = {};
   function drawAsset(role) {
     const box = boxes[role], cur = p.assets[role], pend = pending[role];
-    const thumb = el('div', { style: 'width:96px;height:56px;border-radius:8px;border:1px solid var(--line);background:#f6f7fb center/contain no-repeat;flex-shrink:0' });
+    const thumb = el('div', { class: 'asset-thumbnail' });
     let label = '未设置（使用默认外观）';
     if (pend instanceof File) { label = '待上传：' + pend.name + '（' + kib(pend.size) + '）'; readDataURL(pend).then(u => { thumb.style.backgroundImage = 'url("' + u + '")'; }); }
     else if (pend === 'remove') label = '保存后移除';
@@ -274,8 +274,8 @@ function drawProfile(p) {
   } });
 
   const act = (text, cls, fn) => el('button', { type: 'button', class: cls, text, onclick: async (e) => {
-    const b = e.currentTarget; b.disabled = true; siteRoot.inert=true;
-    try { await fn(); } catch (err) { note(status, err.message, false); } finally { b.disabled = false; siteRoot.inert=false; }
+    const b = e.currentTarget; b.disabled = true; b.setAttribute('aria-busy','true'); siteRoot.inert=true;
+    try { await fn(); } catch (err) { note(status, err.message, false); } finally { b.disabled = false; b.removeAttribute('aria-busy'); siteRoot.inert=false; }
   } });
 
   siteRoot.replaceChildren(card(
@@ -313,7 +313,7 @@ function reviewImport(r) {
   const modal = el('dialog', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '确认导入配置包' },
     el('h2', { text: '确认导入个性化配置包' }),
     el('div', { class: 'section-sub', style: 'margin:0 0 10px', text: '配置包已通过校验并暂存，当前站点尚未改变。确认后将整体替换站点个性化设置；文件、账号和单资源设置不受影响。' }),
-    el('div', { style: 'font-size:11px;line-height:1.9;color:#4c5b73;margin-bottom:12px' },
+    el('div', { style: 'font-size:14px;line-height:1.9;color:var(--text-secondary);margin-bottom:12px' },
       line('站点名', f.site_name || '（默认）'), line('简介', f.intro || '（默认）'), line('强调色', f.accent || '（默认）'),
       line('页脚', f.footer || '（默认）'), line('默认按钮文字', f.button_text || '（默认）'),
       line('图片素材', r.assets.length ? r.assets.map(a => a.label + ' ' + kib(a.size)).join('、') : '无')),

@@ -15,6 +15,16 @@
 
 ## 快速开始
 
+Linux 服务器使用在线安装（需 root 或 sudo，以及支持 HTTPS 的 curl）：
+
+```sh
+curl -fL --proto '=https' --proto-redir '=https' https://github.com/BFRKQSB7/FilePanel/releases/latest/download/install-online.sh -o filepanel-install.sh && sudo sh filepanel-install.sh
+```
+
+脚本识别 amd64/arm64，下载固定版本并核对内置 SHA-256，再验证 Ed25519 签名、创建专用账号和自启服务，终端输出一次性初始化令牌。支持 Alpine/OpenRC、Debian/systemd、Ubuntu 24.04 LTS/systemd。默认监听 `127.0.0.1:8080`；先用 `ssh -L 8080:127.0.0.1:8080 用户@服务器`，在本机打开 `http://127.0.0.1:8080/admin` 设置密码。公网监听、HTTPS、NAT 和节点安装见[安装说明](docs/安装与本机卸载.md)。脚本不修改防火墙或 DNS，已安装实例通过维护功能更新。
+
+从源码运行：
+
 安装 Go 1.26 或更新版本，无需 Node.js、Docker 或外部数据库。在仓库根目录执行：
 
 ```sh

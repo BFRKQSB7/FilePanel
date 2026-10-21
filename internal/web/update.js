@@ -13,18 +13,18 @@ const guide=document.createElement('details');const heading=document.createEleme
 const phases={idle:'暂无预置更新',staged:'更新包已就绪',preflight:'正在检查更新条件',backup:'正在备份',backing_up:'正在备份',applying:'正在安装',restarting:'正在重启',complete:'更新完成',failed:'更新失败',rolled_back:'已回退',rollback:'正在回退',recovering:'正在恢复'};
 let busy = false;
 async function load() {
- if (busy || !FP.csrf()) return; busy = true; refresh.disabled = true; apply.disabled = true; status.textContent = '正在读取更新状态…';
+ if (busy || !FP.csrf()) return; busy = true; refresh.setAttribute('aria-busy','true'); refresh.disabled = true; apply.disabled = true; status.textContent = '正在读取更新状态…';
  try { const s = await FP.api('/api/update'); status.textContent = s.error || ('状态：' + (phases[s.phase]||s.phase||'尚无更新记录') + (s.version ? ' · 版本 ' + s.version : '') + ' · 检查时间 ' + new Date().toLocaleString()); apply.disabled = s.phase !== 'staged'; }
  catch (e) { status.textContent = e.message + '；可稍后重试。'; }
- finally { busy = false; refresh.disabled = false; }
+ finally { busy = false; refresh.removeAttribute('aria-busy'); apply.removeAttribute('aria-busy'); refresh.disabled = false; }
 }
 refresh.addEventListener('click', load);
 apply.addEventListener('click', async () => {
  if (busy || !confirm('更新将暂停访问，并保存可回退快照。继续更新本机面板？')) return;
- busy = true; apply.disabled = true; refresh.disabled = true; status.textContent = '正在提交更新…';
+ busy = true; apply.setAttribute('aria-busy','true'); apply.disabled = true; refresh.disabled = true; status.textContent = '正在提交更新…';
  try { await FP.api('/api/update', { method: 'POST' }); status.textContent = '已提交。服务恢复后点击检查预置更新查看结果。'; }
  catch (e) { status.textContent = e.message; }
- finally { busy = false; refresh.disabled = false; }
+ finally { busy = false; refresh.removeAttribute('aria-busy'); apply.removeAttribute('aria-busy'); refresh.disabled = false; }
 });
 document.addEventListener('fp:navigate',e=>{if(e.detail.section==='maintenance')load();});
 })();

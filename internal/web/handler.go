@@ -23,7 +23,7 @@ import (
 	"filepanel/internal/usage"
 )
 
-//go:embed index.html admin.js admin-ext.js access.js nodes.js moves.js update.js
+//go:embed admin.css index.html admin.js admin-ext.js access.js nodes.js moves.js update.js
 var assets embed.FS
 
 type Server struct {
@@ -105,6 +105,12 @@ func NewServer(d Deps, secure bool) http.Handler {
 	mux.HandleFunc("GET /d/{id}", server.content)
 	mux.HandleFunc("GET /a/{id}", server.publicAsset)
 	mux.HandleFunc("GET /admin", server.index)
+	mux.HandleFunc("GET /admin.css", func(w http.ResponseWriter, r *http.Request) {
+		data, _ := assets.ReadFile("admin.css")
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(data)
+	})
 	mux.HandleFunc("GET /admin-ext.js", server.adminScript)
 	mux.HandleFunc("GET /admin.js", func(w http.ResponseWriter, r *http.Request) {
 		data, _ := assets.ReadFile("admin.js")

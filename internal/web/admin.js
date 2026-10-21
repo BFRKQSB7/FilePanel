@@ -11,7 +11,7 @@ function message(text, error = true) {
  const e = activeDialog ? (activeDialog.querySelector('.dialog-message') || activeDialog.appendChild(node('div','','dialog-message'))) : $('#message');
  e.textContent = text;e.setAttribute('role','alert'); e.className = (activeDialog?'dialog-message ':'')+'message show ' + (error ? 'error' : 'ok'); e.append(action('关闭提示', () => e.classList.remove('show')));
 }
-function action(label, fn, cls = 'quiet-btn') { const b = node('button', label, cls); b.type = 'button'; b.addEventListener('click', fn); return b; }
+function action(label, fn, cls = 'ghost-btn') { const b = node('button', label, cls); b.type = 'button'; b.addEventListener('click', fn); return b; }
 async function api(url, options = {}) {
  const session = csrf;
  const headers = new Headers(options.headers || {});
@@ -42,6 +42,16 @@ function openDialog(dialog, {canClose = () => true, onClose = () => {}} = {}) {
   else if (trigger?.dataset.focusKey) document.querySelector('[data-focus-key="'+CSS.escape(trigger.dataset.focusKey)+'"]')?.focus();
  };
  dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
+ // Keep keyboard cycling within the visible controls, including dynamic fields.
+ dialog.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const controls = [...dialog.querySelectorAll('button, a[href], input, select, textarea, summary, iframe, [tabindex]')]
+   .filter(el => el.tabIndex >= 0 && !el.disabled && !el.closest('[inert]') && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+  const first = controls[0], last = controls[controls.length - 1];
+  if (!first) { e.preventDefault(); return; }
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+ });
  dialog.addEventListener('click', e => { if (e.target === dialog) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) close(); } });
  document.body.append(dialog); activeDialog = dialog; dialog.showModal();
  return close;
@@ -120,13 +130,15 @@ function renderRows() {
  for (const item of filtered) {
   const tr = node('tr'), td = node('td'), cell = node('div', '', 'file-cell'), meta = node('div');
   const name = node('div', item.name, 'file-name');
-  const info = node('div', (item.storage_node ? '远端存储 · ' : '本机存储 · ') + (item.featured ? '公开 · 主页展示' : item.shared ? '公开 · 链接访问' : '私有'), 'file-meta');
+  const info = node('div', item.storage_node ? '远端存储' : '本机存储', 'file-meta');
+  info.append(node('span', item.featured ? '公开 · 主页展示' : item.shared ? '公开 · 链接访问' : '私有', 'badge' + (item.shared ? ' shared' : '')));
   meta.append(name, info); cell.append(node('div','▤','file-icon'), meta); td.append(cell);
   const size = node('td', format(item.size), 'file-size'), created = node('td',date(item.created_at),'hide-mobile');
   const actions = node('td'), wrap = node('div','','row-actions'); actions.className = 'file-actions';
-  const download = node('a','下载','quiet-btn'); download.href = '/api/files/' + encodeURIComponent(item.id); download.download = item.name;
+  const download = node('a','下载','ghost-btn'); download.href = '/api/files/' + encodeURIComponent(item.id); download.download = item.name;
   const shareButton=action('分享',()=>window.FP.openShare(item));shareButton.dataset.focusKey='share-'+item.id;wrap.append(download,shareButton);
-  const more = node('details'), summary = node('summary','更多'); more.append(summary);
+  const more = node('details'), summary = node('summary','更多'); summary.setAttribute('aria-label', '更多操作：' + item.name); more.append(summary);
+  more.addEventListener('keydown', e => { if (e.key === 'Escape') { more.open = false; summary.focus(); e.stopPropagation(); } });
   const list = node('div','','more-actions');
   if (item.storage_node || window.FP.hasStorageNodes) list.append(action('移动', () => { more.open = false; window.FP.openMove(item); }));
   list.append(action('重命名', () => rename(item)), action('删除', () => remove(item),'danger-btn'));
@@ -189,10 +201,10 @@ const drop = $('#drop-zone');
 for (const ev of ['dragenter','dragover']) drop.addEventListener(ev,e => { e.preventDefault(); drop.classList.add('drag'); });
 for (const ev of ['dragleave','drop']) drop.addEventListener(ev,e => { e.preventDefault(); drop.classList.remove('drag'); });
 drop.addEventListener('drop',e => enqueue([...e.dataTransfer.files]));
-$('#refresh-btn').addEventListener('click', async e => { const b = e.currentTarget; b.disabled = true; try { await Promise.all([refreshFiles(),refreshData()]); } finally { b.disabled = false; } });
+$('#refresh-btn').addEventListener('click', async e => { const b = e.currentTarget; b.disabled = true; b.setAttribute('aria-busy','true'); try { await Promise.all([refreshFiles(),refreshData()]); } finally { b.disabled = false; b.removeAttribute('aria-busy'); } });
 $('#data-refresh').addEventListener('click',refreshData);
 $('#boot-retry').addEventListener('click',boot);
-function formSubmit(selector, fn) { $(selector).addEventListener('submit',async e => { e.preventDefault(); const b = e.currentTarget.querySelector('button[type=submit]'); if (b.disabled) return; b.disabled = true; try { await fn(); } catch(err) { message(err.message); } finally { b.disabled = false; } }); }
+function formSubmit(selector, fn) { $(selector).addEventListener('submit',async e => { e.preventDefault(); const b = e.currentTarget.querySelector('button[type=submit]'); if (b.disabled) return; b.disabled = true; b.setAttribute('aria-busy','true'); try { await fn(); } catch(err) { message(err.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); } }); }
 const json = body => ({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 formSubmit('#init-form',async () => { await api('/api/init',json({token:$('#init-token').value,password:$('#init-password').value})); $('#init-form').reset(); showAuth(); message('管理员已初始化，请使用刚设置的密码登录。',false); });
 formSubmit('#login-form',async () => { const r = await api('/api/login',json({password:$('#login-password').value})); csrf = r.csrf; $('#login-form').reset(); $('#message').classList.remove('show'); await showApp(); });

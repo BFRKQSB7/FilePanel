@@ -281,7 +281,7 @@ func Command(args []string, in io.Reader, out io.Writer) error {
 	syscall.Umask(0077)
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	id := flags.String("instance", "main", "本机隔离实例名")
-	rel := flags.String("release", "", "本地可信 release.json；在线发布尚未配置")
+	rel := flags.String("release", "", "已下载并核验的本地 release.json")
 	pin := flags.String("manifest-sha256", "", "独立可信来源的清单 SHA256")
 	role := flags.String("role", "panel", "panel 或 node")
 	listen := flags.String("listen", "127.0.0.1:8080", "明确 IP:端口；node 使用回环 HTTPS 反代")

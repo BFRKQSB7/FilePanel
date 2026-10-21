@@ -15,6 +15,21 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def online_installer(dest, version):
+    manifest = json.loads((dest / 'release.json').read_text(encoding='utf-8'))['manifest']
+    replacements = {
+        '@VERSION@': version,
+        '@MANIFEST_SHA256@': hashlib.sha256((dest / 'release.json').read_bytes()).hexdigest(),
+        '@UPDATE_KEY@': (dest / 'trusted.pub').read_text(encoding='utf-8').strip(),
+        '@AMD64_SHA256@': manifest['artifacts']['linux-amd64']['sha256'],
+        '@ARM64_SHA256@': manifest['artifacts']['linux-arm64']['sha256'],
+    }
+    script = (ROOT / 'scripts/install-online.sh').read_text(encoding='utf-8')
+    for token, value in replacements.items():
+        script = script.replace(token, value)
+    (dest / 'install-online.sh').write_text(script, encoding='utf-8', newline='\n')
+
+
 def run(args, **kwargs):
     return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
 
@@ -23,8 +38,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--fixture', action='store_true')
     p.add_argument('--key', type=Path)
-    p.add_argument('--version', default='0.1.0')
-    p.add_argument('--sequence', type=int, default=1)
+    p.add_argument('--version', default='0.2.1')
+    p.add_argument('--sequence', type=int, default=5)
     p.add_argument('--output', type=Path, default=ROOT / 'dist/t08-release')
     a = p.parse_args()
     assert a.fixture or a.key, 'provide an existing offline key or --fixture'
@@ -66,13 +81,14 @@ def main():
             cmd.append('--create-key')
         run(cmd)
         (dest / 'install.sh').write_bytes((ROOT / 'scripts/install.sh').read_bytes())
+        online_installer(dest, version)
         sums = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in dest.iterdir() if f.is_file() and f.name != 'SHA256SUMS'}
         (dest / 'SHA256SUMS').write_text(''.join(f'{v}  {k}\n' for k, v in sorted(sums.items())), encoding='utf-8')
         if label != 'bad':
             for arch in ['amd64', 'arm64']:
                 package = a.output / f'filepanel-{version}-linux-{arch}.zip'
                 with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as z:
-                    for name in ['filepanel-linux-' + arch, 'release.json', 'trusted.pub', 'install.sh', 'SHA256SUMS']:
+                    for name in ['filepanel-linux-' + arch, 'release.json', 'trusted.pub', 'install.sh', 'install-online.sh', 'SHA256SUMS']:
                         z.write(dest / name, name)
                     z.write(source, 'source.zip')
                     for name in ['docs/安装与本机卸载.md', 'docs/更新与备份恢复.md']:

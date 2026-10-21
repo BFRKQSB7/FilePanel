@@ -15,6 +15,16 @@ Domain/HTTPS setup, optional nodes, recoverable cross-node moves, Linux service 
 
 ## Quick start
 
+Install on a Linux server with root or sudo and an HTTPS-capable curl:
+
+```sh
+curl -fL --proto '=https' --proto-redir '=https' https://github.com/BFRKQSB7/FilePanel/releases/latest/download/install-online.sh -o filepanel-install.sh && sudo sh filepanel-install.sh
+```
+
+The installer selects amd64/arm64, checks embedded SHA-256 pins and the Ed25519 release signature, creates a dedicated account and boot-enabled service, then prints a one-time initialization token. Supported platforms: Alpine/OpenRC, Debian/systemd, Ubuntu 24.04 LTS/systemd. The default listener is `127.0.0.1:8080`; use `ssh -L 8080:127.0.0.1:8080 user@server` and open `http://127.0.0.1:8080/admin` locally to set your password. See the [installation guide](docs/安装与本机卸载.md) for public access, HTTPS, NAT and nodes. Firewall and DNS are managed separately; use maintenance operations to update an existing installation.
+
+To run from source:
+
 Install Go 1.26 or newer. Node.js, Docker and an external database are not required. From the repository root:
 
 ```sh

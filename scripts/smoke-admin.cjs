@@ -28,7 +28,20 @@ async function main() {
   const page = await context.newPage(); const errors=[];page.on('pageerror',e=>errors.push(e.message));
   page.setDefaultTimeout(8000);
   await page.goto(base+'/admin');
+  await page.locator('#init-form').waitFor({state:'visible'});
+  await page.screenshot({path:path.join(temp,'initialization.png'),fullPage:true,animations:'disabled'});
+  for(const width of [375,768,1440,2560]) {
+   await page.setViewportSize({width,height:900});
+   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'initialization fits '+width);
+  }
   await page.locator('#init-token').fill(token); await page.locator('#init-password').fill('Local-UX-Regression-123'); await page.locator('#init-form button').click();
+  await page.locator('#login-password').waitFor({state:'visible'});
+  for(const width of [375,768,1440,2560]) {
+   await page.setViewportSize({width,height:900});
+   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'login fits '+width);
+   await page.screenshot({path:path.join(temp,'login-'+width+'.png'),fullPage:true,animations:'disabled'});
+  }
+  await page.setViewportSize({width:1440,height:900});
   await page.locator('#login-password').fill('Local-UX-Regression-123');await page.locator('#login-form button').click();await page.locator('#app').waitFor({state:'visible'});
   check(await page.locator('#getting-started').isVisible(),'new instance shows onboarding');
   await page.waitForFunction(()=>document.querySelector('#stat-count').textContent==='0');
@@ -137,14 +150,14 @@ async function main() {
   await dialog.locator('[role=alert]').waitFor({state:'visible'});
   check(await page.getByRole('button',{name:'保存分享设置'}).isEnabled(),'image failure is visible inside modal and releases save button');
   page.once('dialog',d=>d.accept());await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
-  for(const width of [375,768,1440]) {
+  for(const width of [375,768,1440,2560]) {
    await page.setViewportSize({width,height:900});
    check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no page overflow at '+width);
    check(await page.locator('[data-tab=data]').innerText().then(s=>s.includes('用量与状态')),'navigation labels remain visible at '+width);
    check(await page.locator('.table-wrap').evaluate(e=>e.scrollWidth<=e.clientWidth+1),'file actions need no horizontal scroll at '+width);
   }
   await page.setViewportSize({width:375,height:812});
-  await page.screenshot({path:path.join(temp,'mobile.png'),fullPage:true});
+  await page.screenshot({path:path.join(temp,'mobile.png'),fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'分享',exact:true}).first().click();await dialog.waitFor({state:'visible'});await page.keyboard.press('Tab');
   check(await page.evaluate(()=>!!document.activeElement.closest('dialog')),'native modal focuses its own controls');
   await page.keyboard.press('Escape');
@@ -156,6 +169,95 @@ async function main() {
   page.on('dialog',d=>d.accept());await page.goto(base+'/admin#settings-appearance');await page.reload();
   await page.getByRole('textbox',{name:'站点名',exact:true}).waitFor({state:'visible'});
   check(await page.getByRole('textbox',{name:'站点名',exact:true}).inputValue()==='Draft site','deep link reload loads saved section');
+
+  // Visual contract: real browser geometry, native keyboard interaction, and screenshots.
+  // Node data below is a presentation fixture; it does not exercise remote transfers.
+  await page.route('**/api/nodes', async route => {
+   const response = await route.fetch(); const state = await response.json();
+   state.nodes = [{id:'visual-node',endpoint:'https://[2001:db8:1234:5678:abcd:ef01:2345:6789]:8443',public_ip:'2001:db8:1234:5678:abcd:ef01:2345:6789',note:'长备注用于验证断行与布局。'.repeat(12),region:'测试地区',storage:true,relay:true,online:true,data_ready:true,policy:{quota_bytes:100e9,protect:true,basis:'sent'},report:null}];
+   await route.fulfill({response,json:state});
+  });
+  await page.locator('[data-tab=files]').click(); await page.locator('#refresh-btn').click();
+  await page.locator('#upload-storage').waitFor({state:'visible'});
+  const longName='长期归档-'.repeat(18)+'2026.zip';
+  await page.locator('#upload-storage').selectOption('');
+  await page.locator('#file-picker').setInputFiles({name:longName,mimeType:'application/zip',buffer:Buffer.from('visual test')});
+  await page.waitForFunction(name=>[...document.querySelectorAll('.file-name')].some(e=>e.textContent===name),longName);
+  // Native select retains Arrow key behavior, no custom listbox or event emulation.
+  await page.locator('#upload-storage').focus(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  check(await page.locator('#upload-storage').inputValue()==='visual-node','native select supports keyboard selection');
+  await page.locator('#upload-storage').selectOption('');
+  await page.getByRole('button',{name:'分享',exact:true}).first().click(); await dialog.waitFor({state:'visible'});
+  for(let i=0;i<24;i++) { await page.keyboard.press('Tab'); assert.ok(await page.evaluate(()=>document.activeElement.closest('dialog')),'dialog traps Tab'); }
+  for(let i=0;i<24;i++) { await page.keyboard.press('Shift+Tab'); assert.ok(await page.evaluate(()=>document.activeElement.closest('dialog')),'dialog traps Shift+Tab'); }
+  check(true,'dialog traps keyboard focus in both directions');
+  await page.keyboard.press('Escape');
+  check(await page.evaluate(()=>document.activeElement.dataset.focusKey?.startsWith('share-')),'Escape restores focus to originating share action');
+  const more=page.locator('#file-rows summary').first();await more.focus();await page.keyboard.press('Enter');
+  check(await more.evaluate(e=>e.parentElement.open),'more actions open with Enter');
+  await page.keyboard.press('Tab');await page.keyboard.press('Escape');
+  check(await more.evaluate(e=>!e.parentElement.open && e===document.activeElement),'more actions close with Escape and restore focus');
+
+  const inspect = async name => {
+   const problems=await page.evaluate(()=>{
+    const visible=e=>e.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
+    const bad=[];
+    if(document.documentElement.scrollWidth>innerWidth)bad.push('page overflow');
+    for(const e of document.querySelectorAll('[hidden],.hidden'))if(visible(e))bad.push('hidden control is visible: '+(e.id||e.tagName));
+    for(const e of document.querySelectorAll('select'))if(visible(e)){
+     const s=getComputedStyle(e);
+     if(e.getBoundingClientRect().height<44 || parseFloat(s.paddingRight)<36 || s.backgroundImage==='none')bad.push('unstyled select: '+(e.id||e.getAttribute('aria-label')));
+     if(!e.labels.length && !e.getAttribute('aria-label'))bad.push('unlabelled select');
+    }
+    for(const e of document.querySelectorAll('button,a.quiet-btn,a.ghost-btn,input:not([type=checkbox]):not([type=radio]),select,summary'))if(visible(e) && e.getBoundingClientRect().height<43)bad.push('small target: '+(e.id||e.textContent.slice(0,30)));
+    for(const e of document.querySelectorAll('*'))if(visible(e)&&getComputedStyle(e).backgroundImage.includes('gradient('))bad.push('gradient: '+e.className);
+    return bad;
+   });
+   check(problems.length===0,name+': '+(problems.join('; ')||'controls, labels and layout'));
+  };
+  for(const width of [375,768,1440,2560]) {
+   await page.setViewportSize({width,height:1000});
+   for(const tab of ['files','data','tutorial']) {
+    await page.locator('[data-tab='+tab+']').click();
+    if(tab==='data')await page.getByRole('heading',{name:'节点磁盘与独立用量'}).waitFor();
+    await inspect(tab+' '+width);
+    if(tab==='files')await page.locator('.upload-log summary').evaluate(e=>e.parentElement.open=false);
+    await page.evaluate(()=>window.scrollTo(0,0));
+    await page.screenshot({path:path.join(temp,tab+'-'+width+'.png'),fullPage:true,animations:'disabled'});
+   }
+   await page.locator('[data-tab=settings]').click();
+   for(const section of ['appearance','access','protection','nodes','account','maintenance']) {
+    await page.locator('[data-settings='+section+']').click();
+    await page.locator('#settings-'+section+' input:visible, #settings-'+section+' button:visible').first().waitFor();
+    await inspect(section+' '+width);
+    await page.evaluate(()=>window.scrollTo(0,0));
+    await page.screenshot({path:path.join(temp,section+'-'+width+'.png'),fullPage:true,animations:'disabled'});
+   }
+   await page.locator('[data-tab=files]').click();
+   await page.getByRole('button',{name:'分享',exact:true}).first().click();await dialog.waitFor({state:'visible'});
+   await dialog.locator('summary').click();await inspect('share dialog '+width);
+   await page.screenshot({path:path.join(temp,'dialog-'+width+'.png'),fullPage:false,animations:'disabled'});await page.keyboard.press('Escape');
+   await more.click();await page.getByRole('button',{name:'移动',exact:true}).first().click();
+   await page.getByRole('dialog',{name:'移动文件'}).waitFor();await inspect('move dialog '+width);await page.keyboard.press('Escape');
+  }
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.locator('#refresh-btn').focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
+  check(await page.locator('#refresh-btn').evaluate(e=>getComputedStyle(e).transitionDuration.split(',').every(t=>parseFloat(t)===0) && getComputedStyle(e).outlineStyle!=='none'),'reduced motion and keyboard focus remain visible');
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  const publicPage=await context.newPage();
+  for(const scheme of ['light','dark']) {
+   await publicPage.emulateMedia({colorScheme:scheme});
+   for(const width of [375,768,1440,2560]) {
+    await publicPage.setViewportSize({width,height:900});
+    for(const [name,url] of [['public',base+'/'],['detail',shareURL]]) {
+     await publicPage.goto(url);
+     check(await publicPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'public '+name+' '+scheme+' '+width+' fits');
+     if(width===375||width===1440)await publicPage.screenshot({path:path.join(temp,name+'-'+scheme+'-'+width+'.png'),fullPage:true,animations:'disabled'});
+    }
+   }
+  }
+  await publicPage.close();
+
   check(errors.length===0,'no browser runtime errors: '+errors.join('; '));
   console.log(JSON.stringify({checks,artifacts:temp}));
  } finally { if(browser)await browser.close();server.kill();await new Promise(r=>{if(server.exitCode!==null)r();else server.once('exit',r);}); }

@@ -3,10 +3,9 @@
 const FP = window.FP; if (!FP) return;
 const el = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
 const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-const button = (text, fn) => { const b = el('button', text, 'quiet-btn'); b.type = 'button'; b.addEventListener('click', async () => { b.disabled = true;root.inert=true; try { await fn(); } catch (e) { FP.toast(e.message); } finally { b.disabled = false;root.inert=false; } }); return b; };
+const button = (text, fn, cls = 'quiet-btn') => { const b = el('button', text, cls); b.type = 'button'; b.addEventListener('click', async () => { b.disabled = true; b.setAttribute('aria-busy','true');root.inert=true; try { await fn(); } catch (e) { FP.toast(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy');root.inert=false; } }); return b; };
 let nextField = 0;
 const field = (label, input) => { const d = el('div', '', 'field node-field'); const l = el('label', label); if (input.type === 'checkbox') { d.classList.add('node-check'); l.prepend(input); d.append(l); } else { if (!input.id) input.id = 'node-field-' + (++nextField); l.htmlFor = input.id; d.append(l, input); } return d; };
-document.head.append(el('style', '.node-field input:not([type="checkbox"]),.node-field textarea,.node-field select{width:100%;max-width:640px;box-sizing:border-box}.node-field textarea,.node-field select{padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--card,#fff);color:inherit;font:inherit}.node-check label{display:flex;gap:9px;align-items:center}.node-check input{height:auto!important;width:auto}.node-field input[type="file"]{padding:8px;height:auto}'));
 const input = (type, value) => { const n = el('input'); n.type = type; if (type === 'checkbox') n.checked = !!value; else n.value = value || ''; return n; };
 const root = el('section', '', 'section-card'); root.style.marginTop = '24px'; document.querySelector('#settings-nodes').append(root); FP.watchDraft(root);
 const dataRoot = el('section', '', 'section-card'); dataRoot.style.marginTop = '24px'; document.querySelector('#page-data').append(dataRoot);
@@ -23,7 +22,8 @@ async function load() {
 }
 function draw(preserveConfig=false) {
  const selected = target.value; target.replaceChildren(new Option('本机存储', ''));
- for (const n of state.nodes) if (n.storage && n.data_ready) target.add(new Option(label(n), n.id));
+ // Probes expire after 60 seconds; every upload probes again on the server.
+ for (const n of state.nodes) if (n.storage && n.online && !n.revoked && !n.rebind_pending) target.add(new Option(label(n), n.id));
  if ([...target.options].some(o => o.value === selected)) target.value = selected;
  uploadField.hidden=target.options.length<2; FP.hasStorageNodes=target.options.length>1; FP.renderRows();
  drawReport(); if(preserveConfig||root.dataset.dirty)return;
@@ -37,12 +37,12 @@ function draw(preserveConfig=false) {
  setup.append(el('p','接入前需要：另一台服务器、可访问的 HTTPS 地址及已验证的程序发布包。依次完成安装准备、生成接入命令、在额外服务器执行、刷新检查连接。'),field('节点连接的面板 HTTPS 地址', endpoint), field('自签名证书的信任文件（CA / PEM，通常留空）', panelCA),
   button('生成一次性接入命令', async () => { const r = await FP.api('/api/nodes/ticket', json('POST', { endpoint: endpoint.value, ca: panelCA.value })); command.value = r.command; endpoint.removeAttribute('data-edited');panelCA.removeAttribute('data-edited');syncDirty();FP.toast(r.note); }), command,
   button('复制接入命令', async () => { if(!command.value){FP.toast('请先生成接入命令');return;}await FP.copy(command.value,command); }),
-  el('p', '在节点上准备已校验的 filepanel 与 release.json，设置 FILEPANEL_MANIFEST_SHA256 后执行接入命令。先将 JSON 内节点地址换成实际 HTTPS 地址，私有节点证书在 node_ca 填入 PEM。安装器以专用用户运行并启用自启，监听 127.0.0.1:8081；管理员配置已有 HTTPS 反代，NAT 端口须逐跳可达。入网文件使用后删除。尚未配置在线发布源。'));
+  el('p', '先将接入命令 JSON 内的节点地址换成实际 HTTPS 地址，私有节点证书在 node_ca 填入 PEM，再在节点终端执行。在线安装器自动下载并校验与面板版本一致的程序，以专用用户运行并启用自启，监听 127.0.0.1:8081；管理员配置 HTTPS 反代，NAT 端口须逐跳可达。入网文件成功使用后删除。'));
  const relay = el('select'); relay.add(new Option('本机出口', ''));
  for (const n of state.nodes) if (n.relay && !n.revoked) relay.add(new Option(label(n), n.id)); relay.value = state.settings.default_relay;
  const fallback = input('checkbox', state.settings.fallback);
  content.append(field('自动线路使用的默认出口', relay), field('出口失败时尝试本机（仍检查文件源与额度）', fallback),
-  button('保存线路设置', async () => { await FP.api('/api/nodes/settings', json('PUT', { default_relay: relay.value, fallback: fallback.checked })); relay.removeAttribute('data-edited');fallback.removeAttribute('data-edited');syncDirty();FP.toast('线路设置已保存'); await load(); }), button('刷新节点', load));
+  button('保存线路设置', async () => { await FP.api('/api/nodes/settings', json('PUT', { default_relay: relay.value, fallback: fallback.checked })); relay.removeAttribute('data-edited');fallback.removeAttribute('data-edited');syncDirty();FP.toast('线路设置已保存'); await load(); }, 'primary-btn'), button('刷新节点', load));
  for (const n of state.nodes) {
   const card = el('div', '', 'setting-form'); card.style.borderTop = '1px solid var(--line)';
   card.append(el('h4', label(n)), el('p', n.revoked ? '已撤销；文件与离线记录保留' : (n.rebind_pending ? '迁移后等待验证新地址并改连 · ' : '') + (n.online ? '控制连接在线' : '控制连接离线') + ' · 面板→节点：' + (n.data_ready ? 'TLS 与身份检查通过' : n.probe_error || '待检查') + ' · 出口→存储：按下载请求实测 · 访客→出口：待外部验证'));
@@ -50,12 +50,12 @@ function draw(preserveConfig=false) {
   const manual = input('checkbox', n.manual_region), quota = input('number', n.policy.quota_bytes / 1e9), protect = input('checkbox', n.policy.protect);
   const basis = el('select'); basis.add(new Option('仅发送', 'sent')); basis.add(new Option('收发合计', 'total')); basis.value = n.policy.basis;
   card.append(field('存储文件：允许上传新文件', storage), field('提供下载线路：允许访客从这里下载', out), field('备注', note), field('地区（自动失败显示未知）', region), field('手动覆盖地区', manual), field('启用用量保护', protect), field('周期额度（GB；0 为未知）', quota), field('计费口径', basis));
-  card.append(button('保存节点设置', async () => { await FP.api('/api/nodes/' + n.id, json('PUT', { storage: storage.checked, relay: out.checked, note: note.value, region: region.value, manual_region: manual.checked, policy: { ...n.policy, protect: protect.checked, quota_bytes: Math.round(Number(quota.value) * 1e9), basis: basis.value } })); card.querySelectorAll('[data-edited]').forEach(e=>e.removeAttribute('data-edited'));syncDirty();FP.toast('已保存，将在下一次连接检查时同步'); await load(); }),
+  card.append(button('保存节点设置', async () => { await FP.api('/api/nodes/' + n.id, json('PUT', { storage: storage.checked, relay: out.checked, note: note.value, region: region.value, manual_region: manual.checked, policy: { ...n.policy, protect: protect.checked, quota_bytes: Math.round(Number(quota.value) * 1e9), basis: basis.value } })); card.querySelectorAll('[data-edited]').forEach(e=>e.removeAttribute('data-edited'));syncDirty();FP.toast('已保存，将在下一次连接检查时同步'); await load(); }, 'primary-btn'),
    button('检查面板到节点', async () => { await FP.api('/api/nodes/' + n.id + '/probe', { method: 'POST' }); await load(); }),
    button('检查节点预置更新', async () => { const s = await FP.api('/api/nodes/' + n.id + '/update'); FP.toast('节点更新：' + s.phase + (s.version ? ' · ' + s.version : '') + (s.error ? ' · ' + s.error : '')); }),
    button('更新此节点', async () => { if (!confirm('仅更新此节点，维护期间暂停该节点传输。继续？')) return; await FP.api('/api/nodes/' + n.id + '/update', { method: 'POST' }); FP.toast('此节点更新已提交，恢复后可检查结果'); }),
-   button('撤销节点凭据', async () => { if (!confirm('撤销后该节点停止接受授权，已有文件仍保留。继续？')) return; await FP.api('/api/nodes/' + n.id + '/revoke', { method: 'POST' }); await load(); }),
-   button('移除已撤销且无文件的记录', async () => { await FP.api('/api/nodes/' + n.id, { method: 'DELETE' }); await load(); })); content.append(card);
+   button('撤销节点凭据', async () => { if (!confirm('撤销后该节点停止接受授权，已有文件仍保留。继续？')) return; await FP.api('/api/nodes/' + n.id + '/revoke', { method: 'POST' }); await load(); }, 'danger-btn'),
+   button('移除已撤销且无文件的记录', async () => { await FP.api('/api/nodes/' + n.id, { method: 'DELETE' }); await load(); }, 'danger-btn')); content.append(card);
  }
  content.append(button('放弃未保存的节点修改',async()=>{if(!root.dataset.dirty||confirm('放弃未保存的节点与线路修改？')){FP.clean(root);draw();}}));
  const migration=el('details');migration.append(el('summary','迁移到另一台面板（高级）'));content.append(migration);drawMigration(migration);

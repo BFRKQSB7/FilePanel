@@ -18,14 +18,14 @@ FP.openMove = async item => {
   for (const n of state.nodes) if (n.storage && n.online && !n.revoked && n.id !== item.storage_node) select.add(new Option(nodeLabel(n), n.id));
   const source = item.storage_node ? state.nodes.find(n => n.id === item.storage_node) : null;
   form.append(el('h3', '移动“' + item.name + '”'), el('p', '源：' + (source ? nodeLabel(source) : (item.storage_node ? '离线节点' : '本机')) + ' · ' + FP.format(item.size)),
-   el('p', '源文件在目标完整校验并切换前持续可用，分享地址和版本保持。优先直传，无法连接时通过面板流式中转；每跳都受用量和空间保护。'), select);
+   el('p', '源文件在目标完整校验并切换前持续可用，分享地址和版本保持。优先直传，无法连接时通过面板流式中转；每跳都受用量和空间保护。'), FP.field('目标存储位置', select));
   const preview = el('p'); form.append(preview);
   const describe = () => { const n = state.nodes.find(n => n.id === select.value); preview.textContent = n ? '目标磁盘最后报告：' + (n.report ? FP.format(n.report.free) + ' 可用' : '未知') + '；执行时检查实时安全预留和用量预算。' : '目标为本机；执行时检查实时安全预留和用量预算。'; };
   select.addEventListener('change', describe); describe();
   const requestID = crypto.randomUUID();
-  const start = el('button', '确认移动'); start.type = 'button'; start.disabled = !select.options.length;
-  start.addEventListener('click', async () => { start.disabled = true; try { await FP.api('/api/files/' + encodeURIComponent(item.id) + '/move', json({ request_id: requestID, target: select.value })); closing(); FP.toast('移动任务已建立，后台预检后执行'); await load(); } catch(e) { FP.toast(e.message); start.disabled = false; } });
-  let closing; const close = el('button', '关闭'); close.type = 'button'; close.addEventListener('click', () => closing()); form.append(start, close);
+  const start = el('button', '确认移动'); start.type = 'button'; start.className = 'primary-btn'; start.disabled = !select.options.length;
+  start.addEventListener('click', async () => { start.disabled = true; start.setAttribute('aria-busy','true'); try { await FP.api('/api/files/' + encodeURIComponent(item.id) + '/move', json({ request_id: requestID, target: select.value })); closing(); FP.toast('移动任务已建立，后台预检后执行'); await load(); } catch(e) { FP.toast(e.message); start.disabled = false; start.removeAttribute('aria-busy'); } });
+  let closing; const close = el('button', '关闭'); close.type = 'button'; close.className = 'quiet-btn'; close.addEventListener('click', () => closing()); const actions = el('div'); actions.className = 'modal-actions'; actions.append(close, start); form.append(actions);
   closing=FP.openDialog(dialog);
  } catch(e) { FP.toast(e.message); }
 };
