@@ -73,7 +73,7 @@ func TestUpdateDurableFailureAndCrashRecovery(t *testing.T) {
 				t.Fatal(e)
 			}
 			h, n, _ := digestFile(candidate)
-			r := release.Manifest{Product: "FilePanel", Version: "0.1.1", Sequence: 2, Source: strings.Repeat("a", 64), SchemaMin: 5, SchemaMax: 5, ProtocolMin: 1, ProtocolMax: 1, Artifacts: map[string]release.Artifact{"linux-" + runtime.GOARCH: {File: "candidate", SHA256: h, Size: n}}}
+			r := release.Manifest{Product: "FilePanel", Version: "0.1.1", Sequence: 2, Source: strings.Repeat("a", 64), SchemaMin: release.MinSchema, SchemaMax: release.Schema, ProtocolMin: 1, ProtocolMax: 1, Artifacts: map[string]release.Artifact{"linux-" + runtime.GOARCH: {File: "candidate", SHA256: h, Size: n}}}
 			b, _ := json.Marshal(r)
 			env := release.Envelope{Manifest: b, Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(key, b))}
 			b, _ = json.Marshal(env)

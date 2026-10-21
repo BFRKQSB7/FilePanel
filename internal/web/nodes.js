@@ -41,8 +41,9 @@ function draw(preserveConfig=false) {
  const relay = el('select'); relay.add(new Option('本机出口', ''));
  for (const n of state.nodes) if (n.relay && !n.revoked) relay.add(new Option(label(n), n.id)); relay.value = state.settings.default_relay;
  const fallback = input('checkbox', state.settings.fallback);
- content.append(field('自动线路使用的默认出口', relay), field('出口失败时尝试本机（仍检查文件源与额度）', fallback),
-  button('保存线路设置', async () => { await FP.api('/api/nodes/settings', json('PUT', { default_relay: relay.value, fallback: fallback.checked })); relay.removeAttribute('data-edited');fallback.removeAttribute('data-edited');syncDirty();FP.toast('线路设置已保存'); await load(); }, 'primary-btn'), button('刷新节点', load));
+ const localRegion=input('text',state.settings.local_region||'');localRegion.maxLength=40;
+ content.append(field('主面板出口地区（下载按钮显示）',localRegion),field('自动线路使用的默认出口', relay), field('出口失败时尝试本机（仍检查文件源与额度）', fallback),
+  button('保存线路设置', async () => { await FP.api('/api/nodes/settings', json('PUT', { default_relay: relay.value, fallback: fallback.checked,local_region:localRegion.value }));for(const input of [relay,fallback,localRegion])input.removeAttribute('data-edited');syncDirty();FP.toast('线路设置已保存'); await load(); }, 'primary-btn'), button('刷新节点', load));
  for (const n of state.nodes) {
   const card = el('div', '', 'setting-form'); card.style.borderTop = '1px solid var(--line)';
   card.append(el('h4', label(n)), el('p', n.revoked ? '已撤销；文件与离线记录保留' : (n.rebind_pending ? '迁移后等待验证新地址并改连 · ' : '') + (n.online ? '控制连接在线' : '控制连接离线') + ' · 面板→节点：' + (n.data_ready ? 'TLS 与身份检查通过' : n.probe_error || '待检查') + ' · 出口→存储：按下载请求实测 · 访客→出口：待外部验证'));

@@ -216,7 +216,7 @@ func Create(root, dest string, reserve uint64) (m Manifest, err error) {
 	if e = db.QueryRow("SELECT MAX(version) FROM schema_migrations").Scan(&m.Schema); e != nil {
 		return m, e
 	}
-	if m.Schema != release.Schema {
+	if m.Schema < release.MinSchema || m.Schema > release.Schema {
 		return m, errors.New("备份 schema 不兼容")
 	}
 	var node int
@@ -229,6 +229,13 @@ func Create(root, dest string, reserve uint64) (m Manifest, err error) {
 	}
 	if e = db.QueryRow("SELECT COUNT(*) FROM node_locations").Scan(&m.RemoteFiles); e != nil {
 		return m, e
+	}
+	if m.Schema >= 6 {
+		var replicas int
+		if e = db.QueryRow("SELECT COUNT(*) FROM file_replicas WHERE node_id<>''").Scan(&replicas); e != nil {
+			return m, e
+		}
+		m.RemoteFiles += replicas
 	}
 	// VACUUM INTO includes committed WAL pages; no migration or recovery runs here.
 	target := filepath.Join(stage, "filepanel.db")
@@ -295,7 +302,7 @@ func Verify(root string) (m Manifest, err error) {
 	if e = release.Read(meta, &m, 32<<20); e != nil {
 		return m, e
 	}
-	if m.Format != 1 || m.Schema != release.Schema || (m.Role != "panel" && m.Role != "node") || len(m.Entries) == 0 || len(m.Entries) > MaxFiles {
+	if m.Format != 1 || m.Schema < release.MinSchema || m.Schema > release.Schema || (m.Role != "panel" && m.Role != "node") || len(m.Entries) == 0 || len(m.Entries) > MaxFiles {
 		return m, errors.New("备份格式/版本无效")
 	}
 	seen := map[string]bool{}
@@ -367,7 +374,11 @@ func Verify(root string) (m Manifest, err error) {
 	if e = db.QueryRow("SELECT COUNT(*) FROM settings WHERE key='node_identity'").Scan(&node); e != nil || (node > 0) != (m.Role == "node") {
 		return m, errors.New("备份身份不匹配")
 	}
-	rows, e = db.Query("SELECT object_key,size,sha256 FROM files WHERE state='available' AND object_key NOT LIKE 'remote:%'")
+	objects := "SELECT object_key,size,sha256 FROM files WHERE state='available' AND object_key NOT LIKE 'remote:%'"
+	if m.Schema >= 6 {
+		objects += " UNION ALL SELECT COALESCE(u.object_key,''),r.size,r.sha256 FROM file_replicas r LEFT JOIN uploads u ON u.id=r.object_id WHERE r.node_id=''"
+	}
+	rows, e = db.Query(objects)
 	if e != nil {
 		return m, e
 	}

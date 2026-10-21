@@ -3,6 +3,8 @@
 const $ = s => document.querySelector(s);
 let csrf = '', items = [], filesBusy = false, dataBusy = false, uploading = false;
 const queue = [];
+const selectedShares = new Set();
+let batchBusy=false;
 const format = n => { if (n < 1024) return n + ' B'; const u = ['KiB','MiB','GiB','TiB']; let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1); return n.toFixed(1) + ' ' + u[i]; };
 const date = t => new Date(t * 1000).toLocaleString('zh-CN');
 const node = (tag, text, cls) => { const e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; };
@@ -102,7 +104,9 @@ async function refreshFiles() {
  if (filesBusy || !csrf) return; filesBusy = true;
  $('#file-status').textContent = '正在刷新文件…';
  try {
-  items = await api('/api/files'); renderRows();
+  items = await api('/api/files');
+  for(const id of selectedShares)if(!items.some(x=>x.id===id&&x.shared))selectedShares.delete(id);
+  renderRows();
   $('#stat-count').textContent = items.length; $('#stat-size').textContent = format(items.reduce((s,x) => s + x.size, 0));
   const shared = items.filter(x => x.shared).length;
   $('#stat-access').textContent = shared ? shared + ' 个分享 · ' + (items.length - shared) + ' 个未分享' : '全部未分享';
@@ -122,17 +126,26 @@ $('#show-start').addEventListener('click', () => { try { localStorage.removeItem
 $('#start-upload').addEventListener('click', () => $('#file-picker').click());
 $('#start-share').addEventListener('click', () => { if (items.length) window.FP.openShare(items[0]); });
 function renderRows() {
- const q = $('#search').value.trim().toLocaleLowerCase(), filtered = items.filter(x => x.name.toLocaleLowerCase().includes(q));
+ const q = $('#search').value.trim().toLocaleLowerCase(), mode=$('#share-filter').value;
+ const filtered = items.filter(x => x.name.toLocaleLowerCase().includes(q) && (mode==='all'||mode==='shared'&&x.shared||mode==='link'&&x.shared&&!x.featured||mode==='public'&&x.featured||mode==='private'&&!x.shared));
  $('#file-rows').replaceChildren(); $('#empty').classList.toggle('hidden', filtered.length !== 0);
- $('#empty-title').textContent = q ? '没有找到匹配的文件' : '这里还没有文件';
- $('#empty-hint').textContent = q ? '试试其他关键词，或清除搜索查看全部文件。' : '上传后默认只有你能访问，需要时再开启分享。';
- $('#clear-search').classList.toggle('hidden', !q);
+ $('#empty-title').textContent = q||mode!=='all' ? '没有找到匹配的文件' : '这里还没有文件';
+ $('#empty-hint').textContent = q||mode!=='all' ? '试试其他关键词或分享状态，或清除筛选查看全部文件。' : '上传后默认只有你能访问，需要时再开启分享。';
+ $('#clear-search').classList.toggle('hidden', !q&&mode==='all');
+ const eligible=filtered.filter(x=>x.shared),all=$('#select-shared');
+ all.disabled=batchBusy||!eligible.length;all.checked=!!eligible.length&&eligible.every(x=>selectedShares.has(x.id));all.indeterminate=!all.checked&&eligible.some(x=>selectedShares.has(x.id));
+ all.onchange=()=>{if(all.checked&&eligible.length>500){all.checked=false;message('每批最多选择 500 个文件，请先筛选范围。');return;}for(const item of eligible){if(all.checked)selectedShares.add(item.id);else selectedShares.delete(item.id);}renderRows();};
+ $('#selection-count').textContent='已选择 '+selectedShares.size+' 个已分享文件';
+ for(const id of ['batch-link','batch-public','batch-cancel','clear-selection'])$('#'+id).disabled=batchBusy||!selectedShares.size;
+ $('#file-rows').inert=batchBusy;
  for (const item of filtered) {
   const tr = node('tr'), td = node('td'), cell = node('div', '', 'file-cell'), meta = node('div');
   const name = node('div', item.name, 'file-name');
   const info = node('div', item.storage_node ? '远端存储' : '本机存储', 'file-meta');
   info.append(node('span', item.featured ? '公开分享 · 主页展示' : item.shared ? '私密分享 · 仅链接' : '未分享', 'badge' + (item.shared ? ' shared' : '')));
-  meta.append(name, info); cell.append(node('div','▤','file-icon'), meta); td.append(cell);
+  const select=node('input');select.type='checkbox';select.checked=selectedShares.has(item.id);select.disabled=!item.shared||batchBusy;select.setAttribute('aria-label','选择已分享文件：'+item.name);
+  select.addEventListener('change',()=>{if(select.checked&&selectedShares.size>=500){select.checked=false;message('每批最多选择 500 个文件。');return;}if(select.checked)selectedShares.add(item.id);else selectedShares.delete(item.id);renderRows();});
+  meta.append(name, info); cell.append(select,node('div','▤','file-icon'), meta); td.append(cell);
   const size = node('td', format(item.size), 'file-size'), created = node('td',date(item.created_at),'hide-mobile');
   const actions = node('td'), wrap = node('div','','row-actions'); actions.className = 'file-actions';
   const download = node('a','下载','ghost-btn'); download.href = '/api/files/' + encodeURIComponent(item.id); download.download = item.name;
@@ -141,6 +154,7 @@ function renderRows() {
   const more = node('details'), summary = node('summary','更多'); summary.setAttribute('aria-label', '更多操作：' + item.name); more.append(summary);
   more.addEventListener('keydown', e => { if (e.key === 'Escape') { more.open = false; summary.focus(); e.stopPropagation(); } });
   const list = node('div','','more-actions');
+  list.append(action('存储与副本',()=>{more.open=false;window.FP.openStorage(item);}));
   if (item.storage_node || window.FP.hasStorageNodes) list.append(action('移动', () => { more.open = false; window.FP.openMove(item); }));
   list.append(action('重命名', () => rename(item)), action('删除', () => remove(item),'danger-btn'));
   const hash = node('small','文件校验码（SHA-256，用于核对完整性）：' + item.sha256); list.append(hash); more.append(list); wrap.append(more); actions.append(wrap); tr.append(td,size,created,actions); $('#file-rows').append(tr);
@@ -162,7 +176,7 @@ async function rename(item) {
  try { await api('/api/files/' + encodeURIComponent(item.id), {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); toast('文件名已更新'); await refreshFiles(); } catch(e) { message(e.message); }
 }
 async function remove(item) {
- if (!confirm('确定永久删除“' + item.name + '”？文件无法从面板恢复；公开分享链接、介绍页和相关图片也将失效。')) return;
+ if (!confirm('确定永久删除“' + item.name + '”及其所有存储副本？文件无法从面板恢复；分享链接、介绍页和相关图片也将失效。离线副本会保留记录并等待清理。')) return;
  try { await api('/api/files/' + encodeURIComponent(item.id),{method:'DELETE'}); toast('文件已删除'); await Promise.all([refreshFiles(),refreshData()]); } catch(e) { message(e.message); }
 }
 function enqueue(files) {
@@ -194,8 +208,16 @@ async function drainQueue() {
   }
  } finally { uploading = false; $('#progress').classList.add('hidden'); $('#upload-status').textContent = '队列处理完毕，请查看每个文件的结果。'; await Promise.all([refreshFiles(),refreshData()]); }
 }
-$('#clear-search').addEventListener('click', () => { $('#search').value = ''; renderRows(); $('#search').focus(); });
-$('#search').addEventListener('input',renderRows);
+$('#clear-search').addEventListener('click', () => { $('#search').value = '';$('#share-filter').value='all';selectedShares.clear(); renderRows(); $('#search').focus(); });
+$('#search').addEventListener('input',()=>{selectedShares.clear();renderRows();});
+$('#share-filter').addEventListener('change',()=>{selectedShares.clear();renderRows();});
+$('#clear-selection').addEventListener('click',()=>{selectedShares.clear();renderRows();});
+for(const [id,mode,label] of [['batch-link','link','转为私密分享（仅凭链接访问，不在主页展示）'],['batch-public','public','转为公开分享（在主页展示）'],['batch-cancel','private','取消分享（原分享链接和下载授权失效，文件保留）']])$('#'+id).addEventListener('click',async()=>{
+ if(batchBusy||!selectedShares.size)return;
+ const ids=[...selectedShares];if(!confirm('将选中的 '+ids.length+' 个已分享文件'+label+'？'))return;
+ batchBusy=true;renderRows();
+ try{await api('/api/shares/batch',json({ids,mode}));selectedShares.clear();await refreshFiles();toast('已处理 '+ids.length+' 个文件');}catch(e){message(e.message);}finally{batchBusy=false;renderRows();}
+});
 for (const id of ['choose-upload','top-upload']) $('#' + id).addEventListener('click', () => $('#file-picker').click());
 $('#file-picker').addEventListener('change',e => { enqueue([...e.target.files]); e.target.value = ''; });
 const drop = $('#drop-zone');

@@ -12,6 +12,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/files/{id}/share", s.getShare)
 	mux.HandleFunc("PUT /api/files/{id}/share", s.putShare)
 	mux.HandleFunc("DELETE /api/files/{id}/share", s.cancelShare)
+	mux.HandleFunc("POST /api/shares/batch", s.batchShares)
 	mux.HandleFunc("POST /api/files/{id}/assets", s.uploadAsset)
 	mux.HandleFunc("DELETE /api/files/{id}/assets/{asset}", s.deleteAsset)
 	mux.HandleFunc("GET /api/assets/{id}", s.adminAsset)
@@ -81,6 +82,28 @@ func (s *Server) putShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	if in.RelayMode == "selected" {
+		seen := map[string]bool{}
+		for _, id := range in.Relays {
+			if seen[id] {
+				writeError(w, 400, "下载线路重复")
+				return
+			}
+			seen[id] = true
+			if id == "local" {
+				continue
+			}
+			if s.nodes == nil {
+				writeError(w, 400, "下载节点不可用")
+				return
+			}
+			n, err := s.nodes.Get(id)
+			if err != nil || n.Revoked || !n.Relay {
+				writeError(w, 400, "请选择已启用下载能力的节点")
+				return
+			}
+		}
+	}
 	_, revoked, err := s.shares.Update(id, in)
 	if err != nil {
 		s.shareError(w, err)
@@ -95,6 +118,30 @@ func (s *Server) putShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) batchShares(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireCSRF(w, r); !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	var in struct {
+		IDs  []string `json:"ids"`
+		Mode string   `json:"mode"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if err := s.shares.BatchMode(in.IDs, in.Mode); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
+	if in.Mode == "private" {
+		for _, id := range in.IDs {
+			s.dl.Revoke(id)
+		}
+	}
+	writeJSON(w, 200, map[string]int{"updated": len(in.IDs)})
 }
 
 func (s *Server) cancelShare(w http.ResponseWriter, r *http.Request) {

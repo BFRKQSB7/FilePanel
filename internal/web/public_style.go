@@ -1,6 +1,6 @@
 package web
 
-// publicCSS 是唯一官方公开页模板的样式。不引入外部资源，不允许内容自定义 CSS。
+// publicCSS 是官方公开页和三种下载布局的共用样式。不引入外部资源，不允许内容自定义 CSS。
 const publicCSS = `
 :root{--bg:#f4f5f7;--card:#fff;--ink:#202936;--muted:#526071;--line:#dce0e6;--blue:#315f9e;--soft:#e8eff8;--warn-bg:#fff6df;--warn-ink:#805c16;--err-bg:#fceeee;--err-ink:#b13535;--btn1:#315f9e;--mark1:#315f9e;--hero1:#315f9e;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;color-scheme:light dark}
 @media(prefers-color-scheme:dark){:root{--bg:#171c24;--card:#202731;--ink:#edf0f4;--muted:#adb8c7;--line:#394452;--blue:#91b8ee;--soft:#293a50;--warn-bg:#3a2e12;--warn-ink:#f1c872;--err-bg:#3a1c1c;--err-ink:#ff9d97}}
@@ -46,7 +46,7 @@ select:disabled{opacity:.6;cursor:not-allowed}
 .empty{text-align:center;padding:60px 20px;color:var(--muted);background:var(--card);border:1px dashed var(--line);border-radius:var(--radius-md)}
 .empty strong{display:block;color:var(--ink);font-size:18px;margin-bottom:6px}
 .article{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-md);padding:36px 40px;margin:28px 0}
-.article>h1{margin:0 0 6px;font-size:clamp(24px,4vw,34px);line-height:1.3}
+.article>h1,.share-heading h1{margin:0 0 6px;font-size:clamp(24px,4vw,34px);line-height:1.3}
 .article .sub{color:var(--muted);margin:0 0 20px}
 .article .banner{border-radius:var(--radius-md);overflow:hidden;margin:0 0 22px}
 .article .banner img{display:block;width:100%;height:auto}
@@ -65,6 +65,10 @@ select:disabled{opacity:.6;cursor:not-allowed}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;margin:0;font-size:13px;color:var(--muted)}
 .facts dt{font-weight:650}.facts dd{margin:0;font-family:ui-monospace,Consolas,monospace}
 .foot{padding:30px 0 50px;text-align:center;color:var(--muted);font-size:13px}
+.regional-downloads{margin:0 0 24px}.regional-downloads h2{font-size:18px;margin:0 0 12px}.regional-downloads>div{display:flex;flex-wrap:wrap;gap:10px}.regional-downloads .btn{height:auto;min-height:44px;padding:9px 16px}.regional-downloads .sub{font-size:13px;margin:12px 0 0}
+.share-head{margin-bottom:24px}.layout-compact{max-width:760px;margin-inline:auto}.layout-compact .share-heading{text-align:center}.layout-compact .banner{max-width:320px;margin-inline:auto}.layout-compact .dl{flex-direction:column;text-align:center}.layout-compact .regional-downloads>div{justify-content:center}
+.layout-showcase .share-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:center}.layout-showcase .share-heading{grid-column:2}.layout-showcase .banner{grid-column:1;grid-row:1;aspect-ratio:4/3;background:var(--soft);display:grid;place-items:center;margin:0}.layout-showcase .banner img{height:100%;object-fit:contain}.cover-placeholder{font-size:80px;color:var(--blue)}
+@media(max-width:760px){.layout-showcase .share-head{display:flex;flex-direction:column;align-items:stretch;gap:20px}.layout-showcase .banner{order:-1}}
 @media(max-width:760px){.grid,.shots{grid-template-columns:1fr}.hero{padding:30px 22px;border-radius:var(--radius-md)}.article{padding:22px 18px;border-radius:var(--radius-md)}.top-in,.wrap{padding:0 16px}.search{width:100%}.search input{flex:1;width:auto}}
 @media(prefers-reduced-motion:reduce){.btn,input,select,.card{transition:none}}
 @media(forced-colors:active){select{appearance:auto;background-image:none}}

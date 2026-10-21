@@ -221,7 +221,7 @@ func (s *Server) remoteAdmin(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	v, e := s.files.Metadata(r.PathValue("id"))
-	if e != nil || v.StorageNode == "" {
+	if e != nil {
 		return false
 	}
 	req, e := s.nodes.SourceRequest(r.Context(), v.ID, s.clientIP(r), auth.Cookie(r), 0)
@@ -242,7 +242,7 @@ func (s *Server) distribute(w http.ResponseWriter, r *http.Request, c download.C
 	if s.nodes == nil {
 		return false
 	}
-	v, e := s.files.Metadata(c.File)
+	_, e := s.files.Metadata(c.File)
 	if e != nil {
 		return false
 	}
@@ -258,6 +258,10 @@ func (s *Server) distribute(w http.ResponseWriter, r *http.Request, c download.C
 	if relay == "local" {
 		relay = ""
 	}
+	if !s.shares.AllowsRelay(c.File, relay) {
+		s.errorPage(w, r, 403, "此分享未开放该下载出口", "请返回分享页面选择地区。", "", "", "/")
+		return true
+	}
 	if relay != "" {
 		t, e := s.nodes.NewDownload(r.Context(), c.File, relay, s.clientIP(r), "", c.AuthVersion)
 		if e == nil {
@@ -268,9 +272,10 @@ func (s *Server) distribute(w http.ResponseWriter, r *http.Request, c download.C
 			s.errorPage(w, r, 503, "下载出口暂不可用", "请稍后重试或联系管理员。", "", "", "/")
 			return true
 		}
-	}
-	if v.StorageNode == "" {
-		return false
+		if !s.shares.AllowsRelay(c.File, "") {
+			s.errorPage(w, r, 503, "指定下载出口暂不可用", "该分享未开放本机回退线路。", "", "", "/")
+			return true
+		}
 	}
 	req, e := s.nodes.SourceRequest(r.Context(), c.File, s.clientIP(r), "", c.AuthVersion)
 	if e == nil {
@@ -288,7 +293,7 @@ func (s *Server) needsLocalBudget(r *http.Request, id string) bool {
 		return true
 	}
 	v, e := s.files.Metadata(id)
-	if e != nil || v.StorageNode == "" {
+	if e != nil {
 		return true
 	}
 	cfg, e := s.nodes.Settings()
@@ -299,5 +304,15 @@ func (s *Server) needsLocalBudget(r *http.Request, id string) bool {
 	if relay == "" {
 		relay = cfg.DefaultRelay
 	}
-	return relay == "" || relay == "local"
+	if relay == "" || relay == "local" {
+		return true
+	}
+	if list, err := s.nodes.Placements(id); err == nil {
+		for _, loc := range list {
+			if loc.Node == relay && loc.State == "active" {
+				return false
+			}
+		}
+	}
+	return v.StorageNode == ""
 }

@@ -17,6 +17,48 @@ import (
 	"testing"
 )
 
+func TestLocalReplicaIncludedAndVerifiedInBackup(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "data")
+	db, e := store.Open(data)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	f, e := files.New(db, data, 1<<20, 1)
+	if e != nil {
+		t.Fatal(e)
+	}
+	v, e := f.Upload(context.Background(), "original.txt", 7, strings.NewReader("payload"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	copy, e := f.UploadStaged(context.Background(), strings.Repeat("r", 32), "copy.txt", 7, strings.NewReader("payload"), nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.DB.Exec("INSERT INTO file_replicas(file_id,node_id,object_id,sha256,size) VALUES(?,'',?,?,?)", v.ID, copy.ID, copy.SHA256, copy.Size); e != nil {
+		t.Fatal(e)
+	}
+	snapshot := filepath.Join(root, "snapshot")
+	if _, e = Create(data, snapshot, 1); e != nil {
+		t.Fatal(e)
+	}
+	restored := filepath.Join(root, "restored")
+	if _, e = RestoreNew(snapshot, restored, 1); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = os.Stat(filepath.Join(restored, "objects/data", copy.ID)); e != nil {
+		t.Fatal("local replica missing from restored snapshot", e)
+	}
+	if e = os.Remove(filepath.Join(snapshot, "objects/data", copy.ID)); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = Verify(snapshot); e == nil {
+		t.Fatal("backup accepted missing local replica")
+	}
+}
+
 func TestWALSnapshotRestoresBytesIdentityAndPrivateState(t *testing.T) {
 	dir := t.TempDir()
 	data := filepath.Join(dir, "data")

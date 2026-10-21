@@ -18,11 +18,12 @@ import (
 	"strings"
 )
 
-var Version = "0.2.3"
-var Sequence = "7"
+var Version = "0.3.0"
+var Sequence = "8"
 var Source = "development"
 
-const Schema = 5
+const Schema = 6
+const MinSchema = 5
 const Protocol = 1
 
 type Artifact struct {

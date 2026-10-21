@@ -161,9 +161,7 @@ func (h *harness) get(v files.Item, relay *peer, rng string) ([]byte, int) {
 	}
 	rec := httptest.NewRecorder()
 	r := download.Request{FileID: v.ID, SHA: v.SHA256, IP: "127.0.0.1", Category: usage.CategoryPublic, Revalidate: func() error { return h.p.authorize(tr, false) }}
-	if tr.Source != "" {
-		r.Source = h.p.RemoteSource(tr)
-	}
+	r.Source = h.p.RemoteSource(tr)
 	must(h.t, h.p.Download.Serve(rec, req, r))
 	return rec.Body.Bytes(), rec.Code
 }

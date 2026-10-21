@@ -107,6 +107,36 @@ async function main() {
   page.once('dialog',d=>d.accept());await second.getByRole('button',{name:'取消分享',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#stat-access').textContent.includes('1 个分享'));
   check((await fetch(secondURL)).status===404,'file row cancellation closes the selected share');
+  await second.getByRole('button',{name:'分享',exact:true}).click();await dialog.waitFor({state:'visible'});
+  await page.getByRole('combobox',{name:'分享方式',exact:true}).selectOption('link');await page.getByRole('button',{name:'保存分享设置'}).click();
+  await page.waitForFunction(()=>document.querySelector('#stat-access').textContent.includes('2 个分享')&&!document.querySelector('dialog .primary-btn').disabled);await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+  await page.getByLabel('分享状态',{exact:true}).selectOption('shared');check(await page.locator('#file-rows tr').count()===2,'shared filter excludes unshared files');
+  for(const [id,label] of [['batch-link','私密分享 · 仅链接'],['batch-public','公开分享 · 主页展示']]){
+   await page.locator('#select-shared').check();page.once('dialog',d=>d.accept());await page.locator('#'+id).click();
+   await page.waitForFunction(label=>document.querySelectorAll('#file-rows tr').length===2&&[...document.querySelectorAll('#file-rows .badge')].every(x=>x.textContent===label)&&!document.querySelector('#file-rows').inert,label);
+   check(true,'batch mode: '+label);
+  }
+  await page.locator('#file-rows tr').first().getByRole('button',{name:'分享',exact:true}).click();await dialog.waitFor({state:'visible'});
+  const templateVisitor=await context.newPage();
+  for(const layout of ['standard','compact','showcase']){
+   await dialog.getByRole('combobox',{name:'下载页面模板',exact:true}).selectOption(layout);await dialog.getByRole('button',{name:'保存分享设置'}).click();
+   await page.waitForFunction(()=>!document.querySelector('dialog .primary-btn').disabled&&!document.querySelector('dialog').dataset.dirty);
+   await templateVisitor.goto(shareURL);check(await templateVisitor.locator('.layout-'+layout).count()===1,'saved download template: '+layout);
+   for(const width of [375,1440]){await templateVisitor.setViewportSize({width,height:900});check(await templateVisitor.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'template '+layout+' fits '+width);await templateVisitor.screenshot({path:path.join(temp,'template-'+layout+'-'+width+'.png'),fullPage:true});}
+  }
+  await templateVisitor.close();await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+  await page.locator('#select-shared').check();page.once('dialog',d=>d.accept());await page.locator('#batch-cancel').click();
+  await page.waitForFunction(()=>document.querySelector('#stat-access').textContent==='全部未分享'&&!document.querySelector('#file-rows').inert);
+  check((await fetch(shareURL)).status===404&&(await fetch(secondURL)).status===404,'batch cancellation revokes all selected pages');
+  await page.getByLabel('分享状态',{exact:true}).selectOption('all');check(await page.locator('#file-rows tr').count()===4,'batch cancellation retains all files');
+  await page.locator('#file-rows tr').first().getByRole('button',{name:'分享',exact:true}).click();await dialog.waitFor({state:'visible'});
+  await dialog.getByRole('combobox',{name:'下载页面模板',exact:true}).selectOption('standard');await dialog.getByRole('combobox',{name:'分享方式',exact:true}).selectOption('public');await dialog.getByRole('button',{name:'保存分享设置'}).click();await page.waitForFunction(()=>!document.querySelector('dialog .primary-btn').disabled&&!document.querySelector('dialog').dataset.dirty);await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+  const storageRow=page.locator('#file-rows tr').first();await storageRow.locator('summary').click();await storageRow.getByRole('button',{name:'存储与副本',exact:true}).click();
+  const storageDialog=page.getByRole('dialog',{name:'存储与副本',exact:true});await storageDialog.waitFor({state:'visible'});
+  check((await storageDialog.innerText()).includes('主位置'),'storage dialog distinguishes primary location');
+  check(await storageDialog.getByRole('button',{name:'复制并保留原件',exact:true}).isDisabled(),'single-location instance cannot create a duplicate on the same server');
+  for(const width of [375,1440]){await page.setViewportSize({width,height:900});check(await storageDialog.evaluate(e=>e.scrollWidth<=e.clientWidth),'storage dialog fits '+width);}
+  await page.keyboard.press('Escape');await storageDialog.waitFor({state:'hidden'});
   await page.locator('[data-tab=settings]').click();
   const siteName=page.getByRole('textbox',{name:'站点名',exact:true});await siteName.fill('Draft site');
   await page.locator('[data-tab=files]').click();await page.locator('[data-tab=settings]').click();

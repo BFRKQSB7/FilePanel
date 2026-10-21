@@ -31,12 +31,12 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 {{else}}<div class="empty"><strong>这里还没有公开资源</strong>管理员发布资源后会显示在这里。</div>{{end}}
 {{template "foot" .}}{{end}}
 {{define "share"}}{{template "head" .}}
-<article class="article"><h1>{{.Name}}</h1><p class="sub">{{if .Version}}版本 {{.Version}} · {{end}}{{size .Size}}</p>
-{{if .Summary}}<p>{{.Summary}}</p>{{end}}
-{{if .Cover}}<div class="banner"><img src="/a/{{.Cover}}" alt="{{.Name}} 封面"></div>{{end}}
+<article class="article share-layout layout-{{.PageTemplate}}"><div class="share-head"><div class="share-heading"><h1>{{.Name}}</h1><p class="sub">{{if .Version}}版本 {{.Version}} · {{end}}{{size .Size}}</p>
+{{if .Summary}}<p>{{.Summary}}</p>{{end}}</div>
+{{if or .Cover (eq .PageTemplate "showcase")}}<div class="banner">{{if .Cover}}<img src="/a/{{.Cover}}" alt="{{.Name}} 封面">{{else}}<span class="cover-placeholder" aria-hidden="true">▤</span>{{end}}</div>{{end}}</div>
 {{if .Notice}}<div class="notice {{if .NoticeErr}}err{{end}}" role="status">{{.Notice}}</div>{{end}}
-<div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div>
-{{if .Lines}}<form action="{{.Base}}/s/{{.Slug}}/get" method="get"><label>下载线路 <select name="relay"><option value="">自动（管理员默认出口）</option><option value="local">本机出口</option>{{range .Lines}}<option value="{{.ID}}">{{.Label}}</option>{{end}}</select></label> <button class="btn ghost" type="submit">使用所选线路</button></form>{{end}}
+<div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get?relay={{.DefaultRelay}}" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div>
+{{if .Lines}}<section class="regional-downloads" aria-label="按地区选择下载出口"><h2>选择下载地区</h2><div>{{range .Lines}}<a class="btn ghost" href="{{$.Base}}/s/{{$.Slug}}/get?relay={{.ID}}" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Label}} · 下载</a>{{end}}</div><p class="sub">地区表示实际下载出口；文件可能由该服务器保存，也可能从其他存储位置中转。</p></section>{{end}}
 {{if .Shots}}<div class="shots">{{range .Shots}}<img src="/a/{{.}}" alt="截图" loading="lazy">{{end}}</div>{{end}}
 {{if .Body}}<div class="md">{{.Body}}</div>{{end}}
 <dl class="facts"><dt>文件名</dt><dd>{{.FileName}}</dd><dt>大小</dt><dd>{{size .Size}}</dd><dt>文件校验码（SHA-256）</dt><dd>{{.SHA}}<br><small>用于核对文件完整性，普通下载无需填写。</small></dd></dl></article>
@@ -219,19 +219,37 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		Shots                                                      []string
 		CanDownload                                                bool
 		Lines                                                      []publicLine
+		PageTemplate, DefaultRelay                                 string
 	}{page: s.newPage(displayName(sh), ""), Slug: sh.Slug, Name: displayName(sh), Version: sh.Version, Summary: sh.Summary,
-		Cover: sh.CoverAsset, Button: sh.ButtonText, FileName: sh.FileName, SHA: sh.SHA256, Size: sh.Size}
+		Cover: sh.CoverAsset, Button: sh.ButtonText, FileName: sh.FileName, SHA: sh.SHA256, Size: sh.Size, PageTemplate: sh.PageTemplate, DefaultRelay: "local"}
 	if s.nodes != nil {
+		cfg, _ := s.nodes.Settings()
+		region := cfg.LocalRegion
+		if region == "" {
+			region = "主面板"
+		}
+		if s.shares.AllowsRelay(sh.FileID, "") {
+			data.Lines = append(data.Lines, publicLine{ID: "local", Label: region + " · 本机出口"})
+		}
+		if cfg.DefaultRelay != "" {
+			data.DefaultRelay = cfg.DefaultRelay
+		}
 		if list, e := s.nodes.List(); e == nil {
 			for _, n := range list {
-				if n.Relay && n.DataReady {
+				if n.Relay && n.Online && !n.RebindPending && s.shares.AllowsRelay(sh.FileID, n.ID) {
 					region := n.Region
 					if region == "" {
 						region = "地区未知"
 					}
-					data.Lines = append(data.Lines, publicLine{n.ID, fmt.Sprintf("线路 %d · %s", len(data.Lines)+1, region)})
+					data.Lines = append(data.Lines, publicLine{ID: n.ID, Label: region + " · " + n.PublicIP})
 				}
 			}
+		}
+		if !s.shares.AllowsRelay(sh.FileID, data.DefaultRelay) && len(data.Lines) > 0 {
+			data.DefaultRelay = data.Lines[0].ID
+		}
+		if len(data.Lines) == 0 {
+			data.Notice = "当前没有可用的下载出口"
 		}
 	}
 	if data.Base != "" {
@@ -247,15 +265,37 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 			data.Shots = append(data.Shots, a.ID)
 		}
 	}
-	notice, ok := s.quotaNotice(r)
-	if !s.needsLocalBudget(r, sh.FileID) {
+	for i := range data.Lines {
+		lineRequest := r.Clone(r.Context())
+		u := *r.URL
+		q := u.Query()
+		q.Set("relay", data.Lines[i].ID)
+		u.RawQuery = q.Encode()
+		lineRequest.URL = &u
+		_, available := s.quotaNotice(lineRequest)
+		data.Lines[i].CanDownload = available || !s.needsLocalBudget(lineRequest, sh.FileID)
+	}
+	defaultRequest := r.Clone(r.Context())
+	u := *r.URL
+	q := u.Query()
+	q.Set("relay", data.DefaultRelay)
+	u.RawQuery = q.Encode()
+	defaultRequest.URL = &u
+	notice, ok := s.quotaNotice(defaultRequest)
+	if !s.needsLocalBudget(defaultRequest, sh.FileID) {
 		notice, ok = "", true
+	}
+	if s.nodes != nil && len(data.Lines) == 0 {
+		notice, ok = "所选下载出口暂时不可用，请稍后重试。", false
 	}
 	data.CanDownload, data.Notice, data.NoticeErr = ok, notice, !ok
 	s.renderPublic(w, http.StatusOK, "share", data)
 }
 
-type publicLine struct{ ID, Label string }
+type publicLine struct {
+	ID, Label   string
+	CanDownload bool
+}
 
 // getLink 为访客签发初次凭证（300 秒）并跳转到受控内容入口。
 func (s *Server) getLink(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +304,28 @@ func (s *Server) getLink(w http.ResponseWriter, r *http.Request) {
 		s.errorPage(w, r, http.StatusNotFound, "资源不存在或已下架", "链接可能已被关闭。", "", "", "/")
 		return
 	}
+	relay := r.URL.Query().Get("relay")
+	if relay == "" && s.nodes != nil {
+		cfg, _ := s.nodes.Settings()
+		relay = cfg.DefaultRelay
+	}
+	if !s.shares.AllowsRelay(sh.FileID, relay) {
+		if r.URL.Query().Get("relay") == "" && sh.RelayMode == "selected" && len(sh.Relays) > 0 {
+			relay = sh.Relays[0]
+		} else {
+			s.errorPage(w, r, 403, "此分享未开放该下载出口", "请选择分享页面上提供的地区按钮。", "", "", "/s/"+sh.Slug)
+			return
+		}
+	}
 	ip := s.clientIP(r)
+	if relay != "" {
+		u := *r.URL
+		q := u.Query()
+		q.Set("relay", relay)
+		u.RawQuery = q.Encode()
+		r = r.Clone(r.Context())
+		r.URL = &u
+	}
 	if err := s.meter.Available(ip); err != nil && s.needsLocalBudget(r, sh.FileID) {
 		derr := downloadError(err)
 		s.errorPage(w, r, derr.Status, derr.Message, "说明页仍可浏览，稍后可再次尝试下载。", "/s/"+sh.Slug+"/get", "重新尝试", "/s/"+sh.Slug)
@@ -272,7 +333,7 @@ func (s *Server) getLink(w http.ResponseWriter, r *http.Request) {
 	}
 	token, _ := s.dl.Issue(download.Claims{File: sh.FileID, SHA: sh.SHA256, AuthVersion: sh.AuthVersion, Scope: "public", IP: ip})
 	query := url.Values{"t": {token}}
-	if relay := r.URL.Query().Get("relay"); relay != "" {
+	if relay != "" {
 		query.Set("relay", relay)
 	}
 	http.Redirect(w, r, s.entryURL("/d/"+url.PathEscape(sh.FileID)+"?"+query.Encode()), http.StatusFound)

@@ -30,13 +30,15 @@ type Move struct {
 	Error        string `json:"error"`
 	Cancel       bool   `json:"cancel"`
 	Updated      int64  `json:"updated"`
+	Kind         string `json:"kind"`
+	ReuseObject  string `json:"-"`
 }
 
-const moveSelect = `SELECT id,request_id,file_id,source,source_object,target,target_object,sha256,size,name,state,fence,progress,route,error,cancel,updated FROM file_moves`
+const moveSelect = `SELECT id,request_id,file_id,source,source_object,target,target_object,sha256,size,name,state,fence,progress,route,error,cancel,updated,kind,reuse_object FROM file_moves`
 
 func scanMove(r interface{ Scan(...any) error }) (Move, error) {
 	var m Move
-	e := r.Scan(&m.ID, &m.RequestID, &m.FileID, &m.Source, &m.SourceObject, &m.Target, &m.TargetObject, &m.SHA, &m.Size, &m.Name, &m.State, &m.Fence, &m.Progress, &m.Route, &m.Error, &m.Cancel, &m.Updated)
+	e := r.Scan(&m.ID, &m.RequestID, &m.FileID, &m.Source, &m.SourceObject, &m.Target, &m.TargetObject, &m.SHA, &m.Size, &m.Name, &m.State, &m.Fence, &m.Progress, &m.Route, &m.Error, &m.Cancel, &m.Updated, &m.Kind, &m.ReuseObject)
 	return m, e
 }
 func (p *Panel) Move(id string) (Move, error) {
@@ -77,13 +79,19 @@ func (p *Panel) oldReader(t Transfer) bool {
 }
 
 func (p *Panel) StartMove(ctx context.Context, requestID, file, target string) (Move, error) {
+	return p.startMove(ctx, requestID, file, target, "move")
+}
+func (p *Panel) StartCopy(ctx context.Context, requestID, file, target string) (Move, error) {
+	return p.startMove(ctx, requestID, file, target, "copy")
+}
+func (p *Panel) startMove(ctx context.Context, requestID, file, target, kind string) (Move, error) {
 	p.opsMu.Lock()
 	defer p.opsMu.Unlock()
 	if len(requestID) < 24 || len(requestID) > 100 {
 		return Move{}, errors.New("请求 ID 长度无效")
 	}
 	if m, e := scanMove(p.DB.DB.QueryRow(moveSelect+" WHERE request_id=?", requestID)); e == nil {
-		if m.FileID != file || m.Target != target {
+		if m.FileID != file || m.Target != target || (m.Kind != kind && !(kind == "move" && m.Kind == "move_existing")) {
 			return Move{}, ErrDenied
 		}
 		return m, nil
@@ -104,9 +112,19 @@ func (p *Panel) StartMove(ctx context.Context, requestID, file, target string) (
 	if e != nil {
 		return Move{}, e
 	}
-	m := Move{ID: random(), RequestID: requestID, FileID: file, Source: v.StorageNode, SourceObject: obj, Target: target, TargetObject: random(), SHA: v.SHA256, Size: v.Size, Name: v.Name, State: "preflight", Updated: p.Now().Unix()}
+	m := Move{ID: random(), RequestID: requestID, FileID: file, Source: v.StorageNode, SourceObject: obj, Target: target, TargetObject: random(), SHA: v.SHA256, Size: v.Size, Name: v.Name, State: "preflight", Updated: p.Now().Unix(), Kind: kind}
+	var existing, replicaState string
+	if err := p.DB.DB.QueryRow("SELECT object_id,state FROM file_replicas WHERE file_id=? AND node_id=?", file, target).Scan(&existing, &replicaState); err == nil {
+		if kind == "copy" || replicaState != "active" {
+			return Move{}, errors.New("此位置已有副本或正在移除，请先处理已有副本")
+		}
+		m.Kind = "move_existing"
+		m.ReuseObject = existing
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Move{}, err
+	}
 	// INSERT SELECT and the deletion trigger serialize move/delete across processes.
-	res, e := p.DB.DB.Exec(`INSERT INTO file_moves(id,request_id,file_id,source,source_object,target,target_object,sha256,size,name,updated) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM files WHERE id=? AND state='available')`, m.ID, requestID, file, m.Source, obj, target, m.TargetObject, m.SHA, m.Size, m.Name, m.Updated, file)
+	res, e := p.DB.DB.Exec(`INSERT INTO file_moves(id,request_id,file_id,source,source_object,target,target_object,sha256,size,name,updated,kind,reuse_object) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM files WHERE id=? AND state='available')`, m.ID, requestID, file, m.Source, obj, target, m.TargetObject, m.SHA, m.Size, m.Name, m.Updated, m.Kind, m.ReuseObject, file)
 	if e != nil {
 		return Move{}, errors.New("此文件已有未完成移动，请先处理原任务")
 	}
@@ -201,6 +219,10 @@ func (p *Panel) movePermit(n Node, in Check) (Permit, bool, error) {
 		return Permit{}, true, ErrDenied
 	}
 	if action == "move_clean" {
+		var retained int
+		if err := p.DB.DB.QueryRow("SELECT COUNT(*) FROM file_replicas WHERE file_id=? AND node_id=? AND object_id=? AND state='active'", m.FileID, node, obj).Scan(&retained); err != nil || retained > 0 {
+			return Permit{}, true, ErrDenied
+		}
 		active, e := p.activeObject(m.FileID)
 		if e != nil {
 			return Permit{}, true, e
@@ -276,6 +298,9 @@ func (p *Panel) ReconcileMoves(ctx context.Context) {
 }
 
 func (p *Panel) runMove(parent context.Context, m Move) error {
+	if m.Kind == "move_existing" {
+		m.TargetObject = m.ReuseObject
+	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	done := make(chan struct{})
@@ -303,7 +328,12 @@ func (p *Panel) runMove(parent context.Context, m Move) error {
 			return e
 		}
 		m.State = "cancelling"
-		if e := p.cleanupMove(ctx, m, false); e != nil {
+		if e := func() error {
+			if m.Kind == "move_existing" {
+				return nil
+			}
+			return p.cleanupMove(ctx, m, false)
+		}(); e != nil {
 			return e
 		}
 		return p.moveUpdate(m, "cancelled")
@@ -311,6 +341,9 @@ func (p *Panel) runMove(parent context.Context, m Move) error {
 	if m.State == "cleaning" {
 		if e := p.cleanupMove(ctx, m, true); e != nil {
 			return e
+		}
+		if m.Kind == "remove" {
+			return p.finishReplicaRemoval(m)
 		}
 		return p.moveUpdate(m, "done")
 	}
@@ -327,7 +360,12 @@ func (p *Panel) runMove(parent context.Context, m Move) error {
 		return e
 	}
 	m.State = "transferring"
-	if e := p.copyMove(ctx, m); e != nil {
+	if e := func() error {
+		if m.Kind == "move_existing" {
+			return nil
+		}
+		return p.copyMove(ctx, m)
+	}(); e != nil {
 		return e
 	}
 	if e := p.fault("after_transfer"); e != nil {
@@ -352,6 +390,9 @@ func (p *Panel) runMove(parent context.Context, m Move) error {
 	}
 	if e := p.switchMove(m); e != nil {
 		return e
+	}
+	if m.Kind == "copy" {
+		return nil
 	}
 	m.State = "cleaning"
 	if e := p.fault("after_switch"); e != nil {
@@ -557,6 +598,18 @@ func (p *Panel) switchMove(m Move) error {
 	e = tx.QueryRow(`SELECT COALESCE(l.node_id,''),COALESCE(o.object_id,CASE WHEN f.object_key LIKE 'remote:%' THEN f.id ELSE f.object_key END),f.sha256 FROM files f LEFT JOIN node_locations l ON l.file_id=f.id LEFT JOIN file_objects o ON o.file_id=f.id WHERE f.id=? AND f.state='available'`, m.FileID).Scan(&source, &obj, &sha)
 	if e != nil || source != m.Source || obj != m.SourceObject || sha != m.SHA {
 		return errors.New("主位置身份冲突，保留全部对象")
+	}
+	if m.Kind == "copy" {
+		if _, e = tx.Exec("INSERT INTO file_replicas(file_id,node_id,object_id,sha256,size) VALUES(?,?,?,?,?)", m.FileID, m.Target, m.TargetObject, m.SHA, m.Size); e != nil {
+			return e
+		}
+		if _, e = tx.Exec("UPDATE file_moves SET state='done',progress=?,error='',updated=? WHERE id=? AND fence=?", m.Size, p.Now().Unix(), m.ID, m.Fence); e != nil {
+			return e
+		}
+		return tx.Commit()
+	}
+	if _, e = tx.Exec("DELETE FROM file_replicas WHERE file_id=? AND node_id=? AND object_id=? AND state='active'", m.FileID, m.Target, m.TargetObject); e != nil {
+		return e
 	}
 	key := m.TargetObject
 	if m.Target != "" {

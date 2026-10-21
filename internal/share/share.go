@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -33,18 +34,21 @@ var (
 )
 
 type Share struct {
-	FileID      string `json:"file_id"`
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	Version     string `json:"version"`
-	Summary     string `json:"summary"`
-	Markdown    string `json:"markdown"`
-	ButtonText  string `json:"button_text"`
-	CoverAsset  string `json:"cover_asset_id"`
-	Enabled     bool   `json:"enabled"`
-	Featured    bool   `json:"featured"`
-	AuthVersion int64  `json:"auth_version"`
-	UpdatedAt   int64  `json:"updated_at"`
+	FileID       string   `json:"file_id"`
+	Slug         string   `json:"slug"`
+	Title        string   `json:"title"`
+	Version      string   `json:"version"`
+	Summary      string   `json:"summary"`
+	Markdown     string   `json:"markdown"`
+	ButtonText   string   `json:"button_text"`
+	CoverAsset   string   `json:"cover_asset_id"`
+	Enabled      bool     `json:"enabled"`
+	Featured     bool     `json:"featured"`
+	AuthVersion  int64    `json:"auth_version"`
+	UpdatedAt    int64    `json:"updated_at"`
+	PageTemplate string   `json:"page_template"`
+	RelayMode    string   `json:"relay_mode"`
+	Relays       []string `json:"relays"`
 	// 来自文件（只读）
 	FileName string `json:"file_name"`
 	Size     int64  `json:"size"`
@@ -52,14 +56,17 @@ type Share struct {
 }
 
 type Input struct {
-	Title      string `json:"title"`
-	Version    string `json:"version"`
-	Summary    string `json:"summary"`
-	Markdown   string `json:"markdown"`
-	ButtonText string `json:"button_text"`
-	CoverAsset string `json:"cover_asset_id"`
-	Enabled    bool   `json:"enabled"`
-	Featured   bool   `json:"featured"`
+	Title        string   `json:"title"`
+	Version      string   `json:"version"`
+	Summary      string   `json:"summary"`
+	Markdown     string   `json:"markdown"`
+	ButtonText   string   `json:"button_text"`
+	CoverAsset   string   `json:"cover_asset_id"`
+	Enabled      bool     `json:"enabled"`
+	Featured     bool     `json:"featured"`
+	PageTemplate string   `json:"page_template"`
+	RelayMode    string   `json:"relay_mode"`
+	Relays       []string `json:"relays"`
 }
 
 type Asset struct {
@@ -121,13 +128,17 @@ func randomString(n int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-const selectShare = `SELECT s.file_id,s.slug,s.title,s.version,s.summary,s.markdown,s.button_text,s.cover_asset_id,s.enabled,s.featured,s.auth_version,s.updated_at,f.display_name,f.size,f.sha256
+const selectShare = `SELECT s.file_id,s.slug,s.title,s.version,s.summary,s.markdown,s.button_text,s.cover_asset_id,s.enabled,s.featured,s.auth_version,s.updated_at,f.display_name,f.size,f.sha256,s.page_template,s.relay_mode,s.relays
 FROM shares s JOIN files f ON f.id=s.file_id AND f.state='available'`
 
 func scanShare(row interface{ Scan(...any) error }) (Share, error) {
 	var s Share
 	var enabled, featured int
-	err := row.Scan(&s.FileID, &s.Slug, &s.Title, &s.Version, &s.Summary, &s.Markdown, &s.ButtonText, &s.CoverAsset, &enabled, &featured, &s.AuthVersion, &s.UpdatedAt, &s.FileName, &s.Size, &s.SHA256)
+	var relays string
+	err := row.Scan(&s.FileID, &s.Slug, &s.Title, &s.Version, &s.Summary, &s.Markdown, &s.ButtonText, &s.CoverAsset, &enabled, &featured, &s.AuthVersion, &s.UpdatedAt, &s.FileName, &s.Size, &s.SHA256, &s.PageTemplate, &s.RelayMode, &relays)
+	if err == nil {
+		err = json.Unmarshal([]byte(relays), &s.Relays)
+	}
 	s.Enabled, s.Featured = enabled == 1, featured == 1
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
@@ -199,13 +210,38 @@ func (m *Manager) Update(fileID string, in Input) (Share, bool, error) {
 	if in.Featured {
 		in.Enabled = true
 	}
+	if in.PageTemplate == "" {
+		in.PageTemplate = cur.PageTemplate
+	}
+	switch in.PageTemplate {
+	case "standard", "compact", "showcase":
+	default:
+		return cur, false, errors.New("未知下载页面模板")
+	}
+	if in.RelayMode == "" {
+		in.RelayMode, in.Relays = cur.RelayMode, cur.Relays
+	}
+	if in.RelayMode != "all" && in.RelayMode != "selected" {
+		return cur, false, errors.New("未知下载线路模式")
+	}
+	if in.RelayMode == "selected" && (len(in.Relays) == 0 || len(in.Relays) > 64) {
+		return cur, false, errors.New("请选择 1 至 64 条下载线路")
+	}
+	if in.Relays == nil {
+		in.Relays = []string{}
+	}
+	if in.RelayMode == "all" {
+		in.Relays = []string{}
+	}
+	relays, _ := json.Marshal(in.Relays)
+	oldRelays, _ := json.Marshal(cur.Relays)
 	if in.CoverAsset != "" {
 		var n int
 		if err := m.db.DB.QueryRow("SELECT 1 FROM assets WHERE id=? AND file_id=?", in.CoverAsset, fileID).Scan(&n); err != nil {
 			return cur, false, errors.New("封面素材不属于该资源")
 		}
 	}
-	revoked := cur.Enabled && !in.Enabled
+	revoked := cur.Enabled && (!in.Enabled || in.RelayMode != cur.RelayMode || string(relays) != string(oldRelays))
 	version := cur.AuthVersion
 	if revoked {
 		version++
@@ -216,12 +252,66 @@ func (m *Manager) Update(fileID string, in Input) (Share, bool, error) {
 		}
 		return 0
 	}
-	if _, err := m.db.DB.Exec(`UPDATE shares SET title=?,version=?,summary=?,markdown=?,button_text=?,cover_asset_id=?,enabled=?,featured=?,auth_version=?,updated_at=? WHERE file_id=?`,
-		fields[0], fields[1], fields[2], fields[3], fields[4], in.CoverAsset, b(in.Enabled), b(in.Featured && in.Enabled), version, time.Now().Unix(), fileID); err != nil {
+	if _, err := m.db.DB.Exec(`UPDATE shares SET title=?,version=?,summary=?,markdown=?,button_text=?,cover_asset_id=?,enabled=?,featured=?,auth_version=?,updated_at=?,page_template=?,relay_mode=?,relays=? WHERE file_id=?`,
+		fields[0], fields[1], fields[2], fields[3], fields[4], in.CoverAsset, b(in.Enabled), b(in.Featured && in.Enabled), version, time.Now().Unix(), in.PageTemplate, in.RelayMode, string(relays), fileID); err != nil {
 		return cur, false, err
 	}
 	updated, err := m.Get(fileID)
 	return updated, revoked, err
+}
+
+func (m *Manager) AllowsRelay(file, relay string) bool {
+	s, err := m.Get(file)
+	if err != nil || !s.Enabled {
+		return false
+	}
+	if s.RelayMode == "all" {
+		return true
+	}
+	if relay == "" {
+		relay = "local"
+	}
+	for _, id := range s.Relays {
+		if id == relay {
+			return true
+		}
+	}
+	return false
+}
+
+// BatchMode changes authorization only. A stale or invalid selection rolls back
+// the entire operation; saved content, slugs and page templates stay untouched.
+func (m *Manager) BatchMode(ids []string, mode string) error {
+	if len(ids) == 0 || len(ids) > 500 {
+		return errors.New("每次请选择 1 至 500 个已分享文件")
+	}
+	if mode != "private" && mode != "link" && mode != "public" {
+		return errors.New("未知分享方式")
+	}
+	tx, err := m.db.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			return errors.New("文件选择重复或无效")
+		}
+		seen[id] = true
+		res, err := tx.Exec(`UPDATE shares SET enabled=?,featured=?,auth_version=auth_version+CASE WHEN ?='private' THEN 1 ELSE 0 END,updated_at=? WHERE file_id=? AND enabled=1 AND EXISTS(SELECT 1 FROM files WHERE id=? AND state='available')`, mode != "private", mode == "public", mode, time.Now().Unix(), id, id)
+		if err != nil {
+			return err
+		}
+		count, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			return errors.New("所选文件分享状态已变化，请刷新后重新选择；本次未修改任何文件")
+		}
+	}
+	return tx.Commit()
 }
 
 // Revoke 关闭分享并提升授权版本（用于删除文件前）。

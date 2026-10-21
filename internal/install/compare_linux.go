@@ -51,7 +51,15 @@ func compareDB(a, b string) error {
 		return e
 	}
 	defer y.Close()
-	for _, q := range []string{"SELECT * FROM files ORDER BY id", "SELECT * FROM shares ORDER BY file_id", "SELECT * FROM assets ORDER BY id", "SELECT * FROM site_profile ORDER BY id", "SELECT * FROM settings ORDER BY key", "SELECT * FROM node_locations ORDER BY file_id", "SELECT id,credential,credential_hash,endpoint,revoked FROM nodes ORDER BY id"} {
+	queries := []string{"SELECT * FROM files ORDER BY id", "SELECT * FROM shares ORDER BY file_id", "SELECT * FROM assets ORDER BY id", "SELECT * FROM site_profile ORDER BY id", "SELECT * FROM settings ORDER BY key", "SELECT * FROM node_locations ORDER BY file_id", "SELECT id,credential,credential_hash,endpoint,revoked FROM nodes ORDER BY id"}
+	var replicas int
+	if err := x.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='file_replicas'").Scan(&replicas); err != nil {
+		return err
+	}
+	if replicas > 0 {
+		queries = append(queries, "SELECT * FROM file_replicas ORDER BY file_id,node_id")
+	}
+	for _, q := range queries {
 		// Compare every original column; additive migrations may introduce new
 		// defaults, but must never drop or change the snapshot's existing data.
 		if strings.Contains(q, "*") {

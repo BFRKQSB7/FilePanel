@@ -8,6 +8,8 @@ A lightweight single-admin file hosting and publishing panel for personal VPS in
 
 - Private-by-default uploads, streaming size/SHA-256 validation, downloads, renaming and deletion.
 - Public resource pages, opt-in home-page listings, revocable download authorization, Range requests and persistent traffic accounting/protection.
+- Link-only or listed sharing, bulk sharing controls and three download-page layouts per file.
+- Verified storage replicas with recoverable copy/removal jobs, independent per-file relay selection and download buttons labeled by exit region.
 - Site branding with images and colors, plus versioned ZIP export and isolated preview/confirmation before import.
 - A Chinese administration interface at `/admin`, public home page at `/` and resource pages at `/s/{slug}`.
 

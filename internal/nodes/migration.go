@@ -25,9 +25,16 @@ type migrationNode struct {
 	Credential string `json:"credential"`
 }
 type migrationFile struct {
-	File     files.Item   `json:"file"`
-	Share    *share.Share `json:"share,omitempty"`
-	ObjectID string       `json:"object_id,omitempty"`
+	File     files.Item         `json:"file"`
+	Share    *share.Share       `json:"share,omitempty"`
+	ObjectID string             `json:"object_id,omitempty"`
+	Replicas []migrationReplica `json:"replicas,omitempty"`
+}
+type migrationReplica struct {
+	Node   string `json:"node"`
+	Object string `json:"object_id"`
+	SHA    string `json:"sha256"`
+	Size   int64  `json:"size"`
 }
 type migrationBundle struct {
 	Version  int             `json:"version"`
@@ -81,7 +88,7 @@ func (p *Panel) ExportMigration(password string) ([]byte, error) {
 	p.mu.Lock()
 	key := append([]byte(nil), p.key...)
 	p.mu.Unlock()
-	b := migrationBundle{Version: 1, Key: base64.RawURLEncoding.EncodeToString(key)}
+	b := migrationBundle{Version: 2, Key: base64.RawURLEncoding.EncodeToString(key)}
 	var e error
 	b.Settings, e = p.Settings()
 	if e != nil {
@@ -102,13 +109,24 @@ func (p *Panel) ExportMigration(password string) ([]byte, error) {
 		return nil, e
 	}
 	for _, v := range items {
-		if v.StorageNode == "" {
+		locations, err := p.Placements(v.ID)
+		if err != nil {
+			return nil, err
+		}
+		var remote []Placement
+		for _, loc := range locations {
+			if loc.Node != "" && loc.State == "active" {
+				remote = append(remote, loc)
+			}
+		}
+		if len(remote) == 0 {
 			continue
 		}
+		v.StorageNode = remote[0].Node
 		entry := migrationFile{File: v}
-		entry.ObjectID, e = p.activeObject(v.ID)
-		if e != nil {
-			return nil, e
+		entry.ObjectID = remote[0].Object
+		for _, loc := range remote[1:] {
+			entry.Replicas = append(entry.Replicas, migrationReplica{loc.Node, loc.Object, loc.SHA, loc.Size})
 		}
 		if s, e := p.Shares.Get(v.ID); e == nil {
 			s.CoverAsset = ""
@@ -161,7 +179,7 @@ func unpackMigration(data []byte, password string) (migrationBundle, error) {
 	if e != nil {
 		return b, errors.New("迁移包密码错误或内容已损坏")
 	}
-	if json.Unmarshal(plain, &b) != nil || b.Version != 1 || len(b.Nodes) > 64 || len(b.Files) > 10000 {
+	if json.Unmarshal(plain, &b) != nil || (b.Version != 1 && b.Version != 2) || len(b.Nodes) > 64 || len(b.Files) > 10000 {
 		return b, ErrDenied
 	}
 	key, e := base64.RawURLEncoding.DecodeString(b.Key)
@@ -190,6 +208,16 @@ func unpackMigration(data []byte, password string) (migrationBundle, error) {
 			return b, ErrDenied
 		}
 		files[v.ID] = true
+		seen := map[string]bool{v.StorageNode: true}
+		if len(f.Replicas) > 64 {
+			return b, ErrDenied
+		}
+		for _, loc := range f.Replicas {
+			if !nodes[loc.Node] || seen[loc.Node] || loc.SHA != v.SHA256 || loc.Size != v.Size || len(loc.Object) < 24 {
+				return b, ErrDenied
+			}
+			seen[loc.Node] = true
+		}
 		if s := f.Share; s != nil {
 			if s.FileID != v.ID || s.Slug == "" || slugs[s.Slug] || s.AuthVersion < 1 {
 				return b, ErrDenied
@@ -262,8 +290,22 @@ func (p *Panel) ImportMigration(data []byte, password, endpoint, ca string, appl
 				return result, e
 			}
 		}
+		for _, loc := range entry.Replicas {
+			if _, e = tx.Exec("INSERT INTO file_replicas(file_id,node_id,object_id,sha256,size) VALUES(?,?,?,?,?)", v.ID, loc.Node, loc.Object, loc.SHA, loc.Size); e != nil {
+				return result, e
+			}
+		}
 		if s := entry.Share; s != nil {
-			_, e = tx.Exec(`INSERT INTO shares(file_id,slug,title,version,summary,markdown,button_text,enabled,featured,auth_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, s.Slug, s.Title, s.Version, s.Summary, s.Markdown, s.ButtonText, s.Enabled, s.Featured, s.AuthVersion, p.Now().Unix(), s.UpdatedAt)
+			if s.PageTemplate == "" {
+				s.PageTemplate = "standard"
+			}
+			if s.RelayMode == "" {
+				s.RelayMode = "all"
+			}
+			if s.Relays == nil {
+				s.Relays = []string{}
+			}
+			_, e = tx.Exec(`INSERT INTO shares(file_id,slug,title,version,summary,markdown,button_text,enabled,featured,auth_version,created_at,updated_at,page_template,relay_mode,relays) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, s.Slug, s.Title, s.Version, s.Summary, s.Markdown, s.ButtonText, s.Enabled, s.Featured, s.AuthVersion, p.Now().Unix(), s.UpdatedAt, s.PageTemplate, s.RelayMode, raw(s.Relays))
 			if e != nil {
 				return result, e
 			}

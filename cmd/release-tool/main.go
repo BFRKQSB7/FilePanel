@@ -53,7 +53,7 @@ func run() error {
 	if e != nil || len(key) != 64 {
 		return fmt.Errorf("私钥格式无效")
 	}
-	m := release.Manifest{Product: "FilePanel", Version: *version, Sequence: *seq, Source: *source, SchemaMin: release.Schema, SchemaMax: release.Schema, ProtocolMin: release.Protocol, ProtocolMax: release.Protocol, Artifacts: map[string]release.Artifact{}}
+	m := release.Manifest{Product: "FilePanel", Version: *version, Sequence: *seq, Source: *source, SchemaMin: release.MinSchema, SchemaMax: release.Schema, ProtocolMin: release.Protocol, ProtocolMax: release.Protocol, Artifacts: map[string]release.Artifact{}}
 	for _, arch := range []string{"amd64", "arm64"} {
 		name := "filepanel-linux-" + arch
 		h, n, e := release.Digest(filepath.Join(*dir, name))

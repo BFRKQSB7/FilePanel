@@ -142,6 +142,7 @@ func (p *Panel) List() ([]Node, error) {
 type Settings struct {
 	DefaultRelay string `json:"default_relay"`
 	Fallback     bool   `json:"fallback"`
+	LocalRegion  string `json:"local_region"`
 }
 
 func (p *Panel) Settings() (Settings, error) {
@@ -153,6 +154,9 @@ func (p *Panel) Settings() (Settings, error) {
 	return s, e
 }
 func (p *Panel) SetSettings(s Settings) error {
+	if len(s.LocalRegion) > 120 {
+		return errors.New("主面板地区过长")
+	}
 	if s.DefaultRelay != "" {
 		n, e := p.Get(s.DefaultRelay)
 		if e != nil || n.Revoked || !n.Relay {
@@ -376,11 +380,7 @@ func (p *Panel) authorize(t Transfer, start bool) error {
 		if e != nil || v.SHA256 != t.SHA {
 			return ErrDenied
 		}
-		obj, oe := p.activeObject(t.File)
-		if oe != nil {
-			return ErrDenied
-		}
-		if (v.StorageNode != t.Source || obj != p.transferObject(t)) && (start || !p.oldReader(t)) {
+		if !p.currentPlacement(t) && (start || !p.oldReader(t)) {
 			return ErrDenied
 		}
 		if t.Session != "" {
@@ -440,6 +440,7 @@ func (p *Panel) permit(n Node, in Check) (Permit, error) {
 		if e != nil {
 			return out, e
 		}
+		out.File.StorageNode = t.Source
 		if in.Role == "relay" {
 			if t.Source == "" {
 				base, ok, e := p.DB.Setting("node_panel_endpoint")
@@ -486,24 +487,18 @@ func (p *Panel) NewDownload(ctx context.Context, file, relay, ip, session string
 			return Transfer{}, e
 		}
 	}
-	if v.StorageNode != "" {
-		n, e := p.Get(v.StorageNode)
-		if e != nil || n.Revoked || p.Now().Unix() > n.LastSeen+30 {
-			return Transfer{}, ErrDenied
-		}
-		if e = p.Probe(ctx, n.ID); e != nil {
-			return Transfer{}, e
-		}
+	if session == "" && !p.Shares.AllowsRelay(file, relay) {
+		return Transfer{}, ErrDenied
 	}
-	t := Transfer{ID: random(), Action: "download", File: file, Source: v.StorageNode, Relay: relay, SHA: v.SHA256, Name: v.Name, IP: ip, Session: session, Version: version, Expires: p.Now().Add(300 * time.Second).Unix(), State: "active"}
+	loc, e := p.sourcePlacement(ctx, file, relay)
+	if e != nil {
+		return Transfer{}, e
+	}
+	t := Transfer{ID: random(), Action: "download", File: file, Source: loc.Node, Relay: relay, SHA: v.SHA256, Name: v.Name, IP: ip, Session: session, Version: version, Expires: p.Now().Add(300 * time.Second).Unix(), State: "active"}
 	if e = p.save(t); e != nil {
 		return t, e
 	}
-	obj, e := p.activeObject(file)
-	if e != nil {
-		return t, e
-	}
-	_, e = p.DB.DB.Exec("INSERT INTO transfer_objects(transfer_id,object_id) VALUES(?,?)", t.ID, obj)
+	_, e = p.DB.DB.Exec("INSERT INTO transfer_objects(transfer_id,object_id) VALUES(?,?)", t.ID, loc.Object)
 	return t, e
 }
 func (p *Panel) TicketURL(t Transfer) string {
@@ -518,6 +513,10 @@ func (p *Panel) RemoteSource(t Transfer) func(context.Context) (files.Item, down
 		v, e := p.Files.Metadata(t.File)
 		if e != nil {
 			return v, nil, e
+		}
+		if t.Source == "" {
+			_, f, e := p.Files.OpenObject(p.transferObject(t), t.SHA)
+			return v, f, e
 		}
 		n, e := p.Get(t.Source)
 		if e != nil || n.Revoked {
@@ -685,6 +684,9 @@ func (p *Panel) commitUpload(t Transfer, v files.Item) error {
 	return tx.Commit()
 }
 func (p *Panel) Delete(ctx context.Context, id string) error {
+	if err := p.deleteReplicas(ctx, id); err != nil {
+		return err
+	}
 	var active int
 	if e := p.DB.DB.QueryRow("SELECT COUNT(*) FROM file_moves WHERE file_id=? AND state NOT IN ('done','cancelled')", id).Scan(&active); e != nil {
 		return e

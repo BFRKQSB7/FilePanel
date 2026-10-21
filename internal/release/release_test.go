@@ -11,7 +11,7 @@ import (
 
 func TestSignedCatalogTrustCompatibilityAndRollback(t *testing.T) {
 	pub, key, _ := ed25519.GenerateKey(rand.Reader)
-	m := Manifest{Product: "FilePanel", Version: "0.1.1", Sequence: 2, Source: strings.Repeat("a", 64), SchemaMin: 5, SchemaMax: 5, ProtocolMin: 1, ProtocolMax: 1, Artifacts: map[string]Artifact{"linux-amd64": {File: "filepanel", Size: 123, SHA256: strings.Repeat("a", 64)}}}
+	m := Manifest{Product: "FilePanel", Version: "0.1.1", Sequence: 2, Source: strings.Repeat("a", 64), SchemaMin: MinSchema, SchemaMax: Schema, ProtocolMin: 1, ProtocolMax: 1, Artifacts: map[string]Artifact{"linux-amd64": {File: "filepanel", Size: 123, SHA256: strings.Repeat("a", 64)}}}
 	sign := func(m Manifest) []byte {
 		b, _ := json.Marshal(m)
 		env := Envelope{b, base64.StdEncoding.EncodeToString(ed25519.Sign(key, b))}

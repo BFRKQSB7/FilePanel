@@ -25,8 +25,8 @@ async function openShare(item) {
   let closeModal=()=>{};
   if (shareOpening || document.querySelector("dialog[open]")) return;
   shareOpening = true;
-  let view;
-  try { view = await FP.api('/api/files/' + encodeURIComponent(item.id) + '/share'); }
+  let view,nodeState;
+  try { [view,nodeState] = await Promise.all([FP.api('/api/files/' + encodeURIComponent(item.id) + '/share'),FP.api('/api/nodes').catch(()=>null)]); }
   catch (e) { FP.message(e.message); return; }
   finally { shareOpening = false; }
   if(document.querySelector("dialog[open]"))return;
@@ -38,6 +38,15 @@ async function openShare(item) {
   const mode = el('select');
   mode.append(new Option('不分享（仅管理员可访问）','private'),new Option('私密分享（仅凭链接访问）','link'),new Option('公开分享（在主页展示）','public'));
   mode.value = view.featured ? 'public' : view.enabled ? 'link' : 'private';
+  const pageTemplate=el('select');pageTemplate.append(new Option('标准介绍','standard'),new Option('简洁下载','compact'),new Option('封面展示','showcase'));pageTemplate.value=view.page_template||'standard';
+  const sample=el('div',{'aria-hidden':'true'},el('div',{class:'sample-cover',text:'▤'}),el('strong',{text:view.title||view.file_name}),el('span',{class:'sample-download',text:'立即下载'}));
+  const drawTemplate=()=>{sample.className='template-sample template-'+pageTemplate.value;};pageTemplate.addEventListener('change',drawTemplate);drawTemplate();
+  const relayMode=el('select');relayMode.append(new Option('使用所有已启用的下载出口','all'),new Option('手动指定下载 / 中转服务器','selected'));relayMode.value=view.relay_mode||'all';
+  const relayChoices=el('div',{class:'relay-choices'}),relayChecks=new Map();
+  const choices=[{id:'local',label:(nodeState?.settings?.local_region||'主面板')+' · 本机出口'},...(nodeState?.nodes||[]).filter(n=>n.relay&&!n.revoked).map(n=>({id:n.id,label:(n.region||'地区未知')+' · '+(n.note||n.public_ip||n.endpoint)+(n.online?'':'（离线）')}))];
+  for(const id of view.relays||[])if(!choices.some(x=>x.id===id))choices.push({id,label:'已保存线路（当前未启用）：'+id});
+  for(const choice of choices){const input=el('input',{type:'checkbox',checked:relayMode.value==='all'||(view.relays||[]).includes(choice.id)});relayChecks.set(choice.id,input);relayChoices.append(el('label',{},input,choice.label));}
+  const drawRelays=()=>{relayChoices.hidden=relayMode.value!=='selected';};relayMode.addEventListener('change',drawRelays);drawRelays();
   const preview = el('div', { class: 'section-sub' });
   let busy = false;
   const status = el('p', { role:'status' });
@@ -87,6 +96,8 @@ async function openShare(item) {
     el('h2', { text: '分享与展示 · ' + view.file_name }),
     el('p',{text:'选择分享方式并保存。标题、版本、介绍和图片全部可选。'}),
     field('分享方式', mode, '私密分享不在公开主页展示；公开分享会在主页展示。选择“不分享”并保存，也可取消现有分享。'),
+    field('下载页面模板',pageTemplate,'仅改变这个分享页面的布局；文件、介绍与下载授权保留。'),sample,
+    field('下载线路',relayMode,'下载按钮按实际出口地区显示。出口可以读取本机副本，也可以从存储服务器中转；未勾选的出口不能通过修改链接绕过。'),relayChoices,
     field('分享链接（改名、换存储后仍可用）', link),status,
     el('div',{class:'modal-actions'},copy,visit,cancel),
     el('details',{},el('summary',{text:'编辑介绍与图片（可选）'}),
@@ -106,7 +117,7 @@ async function openShare(item) {
     try {
       view = await FP.api('/api/files/' + encodeURIComponent(item.id) + '/share', json('PUT', {
         title: title.value, version: version.value, summary: summary.value, markdown: markdown.value, button_text: button.value,
-        cover_asset_id: cover, enabled: mode.value!=='private', featured: mode.value==='public' }));
+        cover_asset_id: cover, enabled: mode.value!=='private', featured: mode.value==='public',page_template:pageTemplate.value,relay_mode:relayMode.value,relays:[...relayChecks].filter(([,input])=>input.checked).map(([id])=>id) }));
       FP.clean(modal); savedState(); FP.toast(view.featured ? '已公开分享并在主页展示' : view.enabled ? '已保存为私密分享，可复制链接' : '已取消分享，访客无法访问'); await FP.refreshFiles();
     } catch (e) { status.textContent = e.message; } finally { busy = false; save.disabled = false; save.removeAttribute('aria-busy'); controls.forEach((e,i)=>e.disabled=disabled[i]);copy.disabled=!view.enabled; }
   });
