@@ -103,6 +103,57 @@ func (e *env) get(path string, headers map[string]string, cookie bool) *httptest
 	return rec
 }
 
+func TestCancelSharePreservesFileAndMetadataAndRequiresCSRF(t *testing.T) {
+	e := newEnv(t)
+	data := content(4096, 3)
+	item := e.upload("cancel.bin", data)
+	sh, _, err := e.deps.Shares.Update(item.ID, share.Input{Title: "Keep title", Summary: "Keep summary", Markdown: "Keep body", Version: "1.0", ButtonText: "Get", Featured: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldToken := e.token(sh, "203.0.113.7")
+	path := "/api/files/" + item.ID + "/share"
+	cancel := func(cookie, csrf bool, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete, path, nil)
+		if cookie {
+			req.AddCookie(&http.Cookie{Name: "fp_session", Value: e.cookie})
+		}
+		if csrf {
+			req.Header.Set("X-CSRF-Token", e.csrf)
+		}
+		rec := httptest.NewRecorder()
+		e.handler.ServeHTTP(rec, req)
+		return rec
+	}
+	for _, auth := range [][2]bool{{false, false}, {true, false}} {
+		if rec := cancel(auth[0], auth[1], path); rec.Code != 401 && rec.Code != 403 {
+			t.Fatalf("unauthorized cancellation: %d", rec.Code)
+		}
+	}
+	if current, _ := e.deps.Shares.Get(item.ID); !current.Enabled {
+		t.Fatal("unauthorized request cancelled sharing")
+	}
+	if rec := cancel(true, true, path); rec.Code != 200 {
+		t.Fatalf("cancel share: %d %s", rec.Code, rec.Body.String())
+	}
+	current, err := e.deps.Shares.Get(item.ID)
+	if err != nil || current.Enabled || current.Featured || current.AuthVersion <= sh.AuthVersion || current.Slug != sh.Slug || current.Title != sh.Title || current.Summary != sh.Summary || current.Markdown != sh.Markdown || current.Version != sh.Version || current.ButtonText != sh.ButtonText {
+		t.Fatalf("cancellation changed saved content or retained authorization: %+v %v", current, err)
+	}
+	if rec := e.get("/api/files/"+item.ID, nil, true); rec.Code != 200 || sum(rec.Body.Bytes()) != sum(data) {
+		t.Fatal("cancelling share lost administrator access to file")
+	}
+	if rec := e.get("/s/"+sh.Slug, nil, false); rec.Code != 404 {
+		t.Fatalf("cancelled page accessible: %d", rec.Code)
+	}
+	if rec := e.get("/d/"+item.ID+"?t="+oldToken, nil, false); rec.Code != 410 {
+		t.Fatalf("old token accepted after cancellation: %d", rec.Code)
+	}
+	if rec := cancel(true, true, "/api/files/missing/share"); rec.Code != 404 {
+		t.Fatalf("unknown file cancellation: %d", rec.Code)
+	}
+}
+
 func TestShareLifecycleHidesPrivateAndInvalidatesOldCredentials(t *testing.T) {
 	e := newEnv(t)
 	data := content(300_000, 1)

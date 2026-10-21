@@ -105,7 +105,7 @@ async function refreshFiles() {
   items = await api('/api/files'); renderRows();
   $('#stat-count').textContent = items.length; $('#stat-size').textContent = format(items.reduce((s,x) => s + x.size, 0));
   const shared = items.filter(x => x.shared).length;
-  $('#stat-access').textContent = shared ? shared + ' 个公开 · ' + (items.length - shared) + ' 个私有' : '全部私有';
+  $('#stat-access').textContent = shared ? shared + ' 个分享 · ' + (items.length - shared) + ' 个未分享' : '全部未分享';
   $('#file-status').textContent = '更新于 ' + new Date().toLocaleTimeString();
   drawStart(items.some(x => x.shared));
  } catch (e) { $('#file-status').textContent = '刷新失败；当前列表可能已过期。'; message(e.message); }
@@ -131,12 +131,13 @@ function renderRows() {
   const tr = node('tr'), td = node('td'), cell = node('div', '', 'file-cell'), meta = node('div');
   const name = node('div', item.name, 'file-name');
   const info = node('div', item.storage_node ? '远端存储' : '本机存储', 'file-meta');
-  info.append(node('span', item.featured ? '公开 · 主页展示' : item.shared ? '公开 · 链接访问' : '私有', 'badge' + (item.shared ? ' shared' : '')));
+  info.append(node('span', item.featured ? '公开分享 · 主页展示' : item.shared ? '私密分享 · 仅链接' : '未分享', 'badge' + (item.shared ? ' shared' : '')));
   meta.append(name, info); cell.append(node('div','▤','file-icon'), meta); td.append(cell);
   const size = node('td', format(item.size), 'file-size'), created = node('td',date(item.created_at),'hide-mobile');
   const actions = node('td'), wrap = node('div','','row-actions'); actions.className = 'file-actions';
   const download = node('a','下载','ghost-btn'); download.href = '/api/files/' + encodeURIComponent(item.id); download.download = item.name;
   const shareButton=action('分享',()=>window.FP.openShare(item));shareButton.dataset.focusKey='share-'+item.id;wrap.append(download,shareButton);
+  if(item.shared)wrap.append(action('取消分享',()=>window.FP.cancelShare(item),'danger-btn'));
   const more = node('details'), summary = node('summary','更多'); summary.setAttribute('aria-label', '更多操作：' + item.name); more.append(summary);
   more.addEventListener('keydown', e => { if (e.key === 'Escape') { more.open = false; summary.focus(); e.stopPropagation(); } });
   const list = node('div','','more-actions');

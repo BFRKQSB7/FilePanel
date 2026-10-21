@@ -35,15 +35,14 @@ async function openShare(item) {
   const summary = el('textarea', { maxlength: 300, rows: 2 }); summary.value = view.summary;
   const button = el('input', { maxlength: 20, value: view.button_text, placeholder: '立即下载' });
   const markdown = el('textarea', { rows: 8, maxlength: 20000, placeholder: '支持标题、列表、链接、代码和本分享的图片；不支持 HTML。' }); markdown.value = view.markdown;
-  const enabled = el('input', { type: 'checkbox', checked: view.enabled });
-  const featured = el('input', { type: 'checkbox', checked: view.featured });
+  const mode = el('select');
+  mode.append(new Option('不分享（仅管理员可访问）','private'),new Option('私密分享（仅凭链接访问）','link'),new Option('公开分享（在主页展示）','public'));
+  mode.value = view.featured ? 'public' : view.enabled ? 'link' : 'private';
   const preview = el('div', { class: 'section-sub' });
   let busy = false;
   const status = el('p', { role:'status' });
   const assets = el('div', { class: 'section-sub' });
   let cover = view.cover_asset_id;
-  enabled.addEventListener('change', () => { if (!enabled.checked) featured.checked = false; });
-  featured.addEventListener('change', () => { if (featured.checked) enabled.checked = true; });
 
   function drawAssets() {
     assets.replaceChildren();
@@ -75,16 +74,21 @@ async function openShare(item) {
   const link = el('input', { readonly: true, value: view.url.startsWith('/') ? location.origin + view.url : view.url, 'aria-label': '稳定分享链接' });
   const save = el('button', { type: 'button', class: 'primary-btn', text: '保存分享设置' });
   const copy = el('button', {type:'button',class:'quiet-btn',text:'复制分享链接',onclick:()=>FP.copy(link.value,link)});
-  const visit = el('a', {href:link.value,target:'_blank',rel:'noopener',class:'quiet-btn',text:'查看公开页面'});
-  function savedState() { copy.disabled = !view.enabled; visit.hidden = !view.enabled; status.textContent = view.enabled ? '已公开：拥有链接的人无需登录即可访问。现在可以复制链接。' : '当前为私有。开启分享并保存后，访客才能使用此链接。'; }
+  const visit = el('a', {href:link.value,target:'_blank',rel:'noopener',class:'quiet-btn',text:'查看分享页面'});
+  const cancel = el('button', {type:'button',class:'danger-btn',text:'取消分享',onclick:async()=>{
+    if(busy)return;busy=true;modal.inert=true;
+    let cancelled=false;
+    try { cancelled=await FP.cancelShare(item); } finally {busy=false;modal.inert=false;}
+    if(cancelled){FP.clean(modal);closeModal();}
+  }});
+  function savedState() { copy.disabled = !view.enabled; visit.hidden = !view.enabled; cancel.hidden = !view.enabled; status.textContent = view.featured ? '当前为公开分享：公开主页展示，访客也可通过链接访问。' : view.enabled ? '当前为私密分享：仅凭链接访问下载页面，不在公开主页展示。拥有链接的人无需登录。' : '当前未分享：只有管理员能访问。选择分享方式并保存后，链接才会生效。'; }
   savedState();
   const modal = el('dialog', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '分享设置' },
     el('h2', { text: '分享与展示 · ' + view.file_name }),
-    el('p',{text:'只需开启分享并保存即可发布。下面的标题、版本、介绍和图片全部可选。'}),
+    el('p',{text:'选择分享方式并保存。标题、版本、介绍和图片全部可选。'}),
+    field('分享方式', mode, '私密分享不在公开主页展示；公开分享会在主页展示。选择“不分享”并保存，也可取消现有分享。'),
     field('分享链接（改名、换存储后仍可用）', link),status,
-    el('div',{class:'modal-actions'},copy,visit),
-    el('div', { style: 'display:flex;gap:18px;flex-wrap:wrap;margin:6px 0' },
-      el('label', {}, enabled, ' 开启公开分享'), el('label', {}, featured, ' 在公开主页展示（会同时开启分享）')),
+    el('div',{class:'modal-actions'},copy,visit,cancel),
     el('details',{},el('summary',{text:'编辑介绍与图片（可选）'}),
     field('标题（留空使用文件名）', title), field('版本（可选）', version), field('简介', summary), field('下载按钮文字（可选）', button),
     field('文件介绍', markdown, '可以直接写普通文字。Markdown 示例：# 标题、- 列表项、**加粗文字**。'),
@@ -98,19 +102,26 @@ async function openShare(item) {
     el('div', { class: 'modal-actions' }, el('button', { type: 'button', class: 'quiet-btn', text: '关闭', onclick: () => closeModal() }), save));
   save.addEventListener('click', async () => {
     if (busy) return; busy = true; save.disabled = true; save.setAttribute('aria-busy','true');
-    const controls=[...modal.querySelectorAll('input,textarea,button')].filter(e=>e!==save);const disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);
+    const controls=[...modal.querySelectorAll('input,textarea,select,button')].filter(e=>e!==save);const disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);
     try {
       view = await FP.api('/api/files/' + encodeURIComponent(item.id) + '/share', json('PUT', {
         title: title.value, version: version.value, summary: summary.value, markdown: markdown.value, button_text: button.value,
-        cover_asset_id: cover, enabled: enabled.checked, featured: featured.checked }));
-      FP.clean(modal); savedState(); FP.toast(enabled.checked ? '已保存并公开，可复制链接' : '已保存为私有，访客无法访问'); await FP.refreshFiles();
+        cover_asset_id: cover, enabled: mode.value!=='private', featured: mode.value==='public' }));
+      FP.clean(modal); savedState(); FP.toast(view.featured ? '已公开分享并在主页展示' : view.enabled ? '已保存为私密分享，可复制链接' : '已取消分享，访客无法访问'); await FP.refreshFiles();
     } catch (e) { status.textContent = e.message; } finally { busy = false; save.disabled = false; save.removeAttribute('aria-busy'); controls.forEach((e,i)=>e.disabled=disabled[i]);copy.disabled=!view.enabled; }
   });
   FP.watchDraft(modal);
   closeModal = FP.openDialog(modal,{canClose:()=>!busy});
-  enabled.focus();
+  mode.focus();
 }
 FP.openShare = openShare;
+FP.cancelShare = async item => {
+  if(!confirm('取消“'+item.name+'”的分享？原分享页面与下载授权将失效，文件保留。未保存的分享设置不会提交。'))return false;
+  try {
+    await FP.api('/api/files/'+encodeURIComponent(item.id)+'/share',{method:'DELETE'});
+    FP.toast('已取消分享，文件保留');await FP.refreshFiles();return true;
+  } catch(e) {FP.message(e.message);return false;}
+};
 FP.el = el; FP.json = json; FP.field = field;
 
 // ---- 用量与保护（挂载到“数据”页） ----

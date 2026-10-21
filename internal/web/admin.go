@@ -11,6 +11,7 @@ import (
 func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/files/{id}/share", s.getShare)
 	mux.HandleFunc("PUT /api/files/{id}/share", s.putShare)
+	mux.HandleFunc("DELETE /api/files/{id}/share", s.cancelShare)
 	mux.HandleFunc("POST /api/files/{id}/assets", s.uploadAsset)
 	mux.HandleFunc("DELETE /api/files/{id}/assets/{asset}", s.deleteAsset)
 	mux.HandleFunc("GET /api/assets/{id}", s.adminAsset)
@@ -94,6 +95,23 @@ func (s *Server) putShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) cancelShare(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireCSRF(w, r); !ok {
+		return
+	}
+	id := r.PathValue("id")
+	if _, err := s.shareView(id); err != nil {
+		s.shareError(w, err)
+		return
+	}
+	if err := s.shares.Revoke(id); err != nil {
+		s.shareError(w, err)
+		return
+	}
+	s.dl.Revoke(id)
+	writeJSON(w, http.StatusOK, map[string]bool{"cancelled": true})
 }
 
 func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
