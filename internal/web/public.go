@@ -20,10 +20,11 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 	"add":  func(a, b int) int { return a + b },
 }).Parse(`
 {{define "head"}}<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="referrer" content="no-referrer"><title>{{.Title}}</title>{{if .Canonical}}<link rel="canonical" href="{{.Canonical}}">{{end}}<style>{{.CSS}}</style></head><body>
-<header class="top"><div class="top-in"><a class="brand" href="{{.Base}}/">{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{else}}<span class="mark">{{.Mark}}</span>{{end}}{{.Brand}}</a><form class="search" action="{{.Base}}/" method="get" role="search"><input name="q" value="{{.Query}}" placeholder="搜索资源" aria-label="搜索资源" maxlength="80"><button class="btn" type="submit">搜索</button></form></div></header><main class="wrap">{{end}}
+<header class="top"><div class="top-in">{{if .HideNavigation}}<div class="brand">{{template "brand" .}}</div><span class="access-label">链接访问 / FILE ACCESS</span>{{else}}<a class="brand" href="{{.Base}}/">{{template "brand" .}}</a><form class="search" action="{{.Base}}/" method="get" role="search"><input name="q" value="{{.Query}}" placeholder="搜索资源" aria-label="搜索资源" maxlength="80"><button class="btn" type="submit">搜索</button></form>{{end}}</div></header><main class="wrap">{{end}}
+{{define "brand"}}{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{else}}<span class="mark">{{.Mark}}</span>{{end}}{{.Brand}}{{end}}
 {{define "foot"}}</main><footer class="foot">{{.Footer}}</footer></body></html>{{end}}
 {{define "home"}}{{template "head" .}}
-<section class="hero"><h1>资源下载</h1><p>{{.Intro}}</p></section>
+<section class="hero"><span class="overline">FILE ARCHIVE / 公开资源</span><h1>资源下载</h1><p>{{.Intro}}</p><span class="hero-index" aria-hidden="true">01 /</span></section>
 {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
 {{if .Items}}<div class="grid">{{range .Items}}<a class="card" href="{{$.Base}}/s/{{.Slug}}"><div class="cover">{{if .Cover}}<img src="/a/{{.Cover}}" alt="" loading="lazy">{{else}}▤{{end}}</div><div class="card-body"><h2>{{.Name}}</h2>{{if .Summary}}<p>{{.Summary}}</p>{{end}}<div class="meta">{{if .Version}}<span class="tag">{{.Version}}</span>{{end}}<span>{{size .Size}}</span></div></div></a>{{end}}</div>
 {{if or .Prev .Next}}<nav class="pager" aria-label="分页">{{if .Prev}}<a class="btn ghost" href="{{.Prev}}">上一页</a>{{end}}<span>第 {{.Page}} / {{.Pages}} 页</span>{{if .Next}}<a class="btn ghost" href="{{.Next}}">下一页</a>{{end}}</nav>{{end}}
@@ -31,7 +32,7 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 {{else}}<div class="empty"><strong>这里还没有公开资源</strong>管理员发布资源后会显示在这里。</div>{{end}}
 {{template "foot" .}}{{end}}
 {{define "share"}}{{template "head" .}}
-<article class="article share-layout layout-{{.PageTemplate}}"><div class="share-head"><div class="share-heading"><h1>{{.Name}}</h1><p class="sub">{{if .Version}}版本 {{.Version}} · {{end}}{{size .Size}}</p>
+<article class="article share-layout layout-{{.PageTemplate}}"><div class="share-head"><div class="share-heading"><div class="overline">FILE / 文件下载</div><h1>{{.Name}}</h1><p class="sub">{{if .Version}}版本 {{.Version}} · {{end}}{{size .Size}}</p>
 {{if .Summary}}<p>{{.Summary}}</p>{{end}}</div>
 {{if or .Cover (eq .PageTemplate "showcase")}}<div class="banner">{{if .Cover}}<img src="/a/{{.Cover}}" alt="{{.Name}} 封面">{{else}}<span class="cover-placeholder" aria-hidden="true">▤</span>{{end}}</div>{{end}}</div>
 {{if .Notice}}<div class="notice {{if .NoticeErr}}err{{end}}" role="status">{{.Notice}}</div>{{end}}
@@ -47,7 +48,7 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 <article class="article"><h1>示例资源</h1><p class="sub">版本 1.0.0 · 12.3 MB</p><div class="dl"><a class="btn big" href="#">{{.Button}}</a><div>example.bin<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div></article>
 {{template "foot" .}}{{end}}
 {{define "error"}}{{template "head" .}}
-<div class="empty" role="alert"><strong>{{.Heading}}</strong>{{.Message}}<p>{{if .Retry}}<a class="btn" href="{{.Retry}}">{{.RetryText}}</a> {{end}}<a class="btn ghost" href="{{.Back}}">返回</a></p></div>
+<div class="empty" role="alert"><strong>{{.Heading}}</strong>{{.Message}}<p>{{if .Retry}}<a class="btn" href="{{.Retry}}">{{.RetryText}}</a> {{end}}{{if .Back}}<a class="btn ghost" href="{{.Back}}">返回</a>{{end}}</p></div>
 {{template "foot" .}}{{end}}
 `))
 
@@ -58,6 +59,7 @@ type page struct {
 	CSS                                      template.CSS
 	Notice                                   string
 	NoticeErr                                bool
+	HideNavigation                           bool
 }
 
 // newPage 套用站点个性化：品牌、Logo、简介、页脚与主题 CSS 都来自已校验的配置。
@@ -121,6 +123,11 @@ func (s *Server) errorPage(w http.ResponseWriter, r *http.Request, status int, h
 		page
 		Heading, Message, Retry, RetryText, Back string
 	}{s.newPage(heading, ""), heading, message, retry, retryText, back}
+	// 错误页无法总是找回分享状态；资源和下载路径默认不提供公开目录入口。
+	data.HideNavigation = strings.HasPrefix(r.URL.Path, "/s/") || strings.HasPrefix(r.URL.Path, "/d/")
+	if data.HideNavigation && data.Back == "/" {
+		data.Back = ""
+	}
 	s.renderPublic(w, status, "error", data)
 }
 
@@ -222,6 +229,7 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		PageTemplate, DefaultRelay                                 string
 	}{page: s.newPage(displayName(sh), ""), Slug: sh.Slug, Name: displayName(sh), Version: sh.Version, Summary: sh.Summary,
 		Cover: sh.CoverAsset, Button: sh.ButtonText, FileName: sh.FileName, SHA: sh.SHA256, Size: sh.Size, PageTemplate: sh.PageTemplate, DefaultRelay: "local"}
+	data.HideNavigation = !sh.Featured
 	if s.nodes != nil {
 		cfg, _ := s.nodes.Settings()
 		region := cfg.LocalRegion

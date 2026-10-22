@@ -10,7 +10,7 @@ const input = (type, value) => { const n = el('input'); n.type = type; if (type 
 const root = el('section', '', 'section-card'); root.style.marginTop = '24px'; document.querySelector('#settings-nodes').append(root); FP.watchDraft(root);
 const dataRoot = el('section', '', 'section-card'); dataRoot.style.marginTop = '24px'; document.querySelector('#page-data').append(dataRoot);
 const target = el('select'); target.id = 'upload-storage'; target.setAttribute('aria-label', '上传存储位置');
-const uploadField = field('上传存储位置', target); document.querySelector('#drop-zone').before(uploadField);
+const uploadField = field('上传存储位置', target); uploadField.classList.add('upload-target'); document.querySelector('#file-status').after(uploadField);
 FP.uploadTarget = () => target.value;
 let state, busy = false;
 function syncDirty(){if(root.querySelector('[data-edited]'))FP.dirty(root);else FP.clean(root);}

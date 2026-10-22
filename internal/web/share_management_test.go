@@ -82,6 +82,9 @@ func TestShareTemplatesAndSelectedRelayCannotBeBypassed(t *testing.T) {
 		if rec.Code != 200 || !strings.Contains(body, "layout-"+layout) || strings.Contains(body, "<script>title</script>") || !strings.Contains(body, "relay=local") {
 			t.Fatalf("unsafe or missing template %s: %d", layout, rec.Code)
 		}
+		if strings.Contains(body, `role="search"`) || strings.Contains(body, `href="/"`) || strings.Contains(body, `<a class="brand"`) {
+			t.Fatalf("private %s exposes public navigation", layout)
+		}
 		if rec = e.get("/s/"+sh.Slug+"/get?relay=forbidden", nil, false); rec.Code != 403 {
 			t.Fatalf("forged unselected relay: %d", rec.Code)
 		}
@@ -92,5 +95,37 @@ func TestShareTemplatesAndSelectedRelayCannotBeBypassed(t *testing.T) {
 	}
 	if _, _, err := e.deps.Shares.Update(v.ID, share.Input{Enabled: true, PageTemplate: "<script>"}); err == nil {
 		t.Fatal("untrusted template accepted")
+	}
+}
+
+func TestPublicNavigationAndPrivateErrorIsolation(t *testing.T) {
+	e := newEnv(t)
+	f := e.upload("navigation.txt", []byte("navigation"))
+	sh, _, err := e.deps.Shares.Update(f.ID, share.Input{Featured: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/", "/s/" + sh.Slug} {
+		body := e.get(path, nil, false).Body.String()
+		if !strings.Contains(body, `role="search"`) || !strings.Contains(body, `<a class="brand"`) {
+			t.Fatalf("public navigation missing: %s", path)
+		}
+	}
+	_, _, err = e.deps.Shares.Update(f.ID, share.Input{Enabled: true, RelayMode: "selected", Relays: []string{"local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/s/missing", "/s/" + sh.Slug + "/get?relay=missing", "/d/" + f.ID + "?t=invalid"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept", "text/html")
+		rec := httptest.NewRecorder()
+		e.handler.ServeHTTP(rec, req)
+		body := rec.Body.String()
+		if rec.Code < 400 {
+			t.Fatalf("expected error for %s", path)
+		}
+		if strings.Contains(body, `role="search"`) || strings.Contains(body, `href="/"`) || strings.Contains(body, `<a class="brand"`) {
+			t.Fatalf("error exposes public navigation: %s", path)
+		}
 	}
 }

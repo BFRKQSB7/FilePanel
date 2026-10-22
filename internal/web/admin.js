@@ -3,8 +3,9 @@
 const $ = s => document.querySelector(s);
 let csrf = '', items = [], filesBusy = false, dataBusy = false, uploading = false;
 const queue = [];
-const selectedShares = new Set();
+const selectedFiles = new Set();
 let batchBusy=false;
+let visibleFiles=[], anchorID='', focusedID='', contextMenu=null, sortKey='created_at', sortDirection=-1;
 const format = n => { if (n < 1024) return n + ' B'; const u = ['KiB','MiB','GiB','TiB']; let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1); return n.toFixed(1) + ' ' + u[i]; };
 const date = t => new Date(t * 1000).toLocaleString('zh-CN');
 const node = (tag, text, cls) => { const e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; };
@@ -63,6 +64,7 @@ async function copy(text, input) {
  catch { if (input) { input.focus(); input.select(); } message('浏览器未允许自动复制，请选中链接后复制。', false); }
 }
 function navigate(tab, section) {
+ closeContextMenu();
  if (!['files','data','tutorial','settings'].includes(tab)) tab = 'files';
  for (const b of document.querySelectorAll('.nav button')) { const selected = b.dataset.tab === tab; b.classList.toggle('active', selected); b.setAttribute('aria-current', selected ? 'page' : 'false'); }
  for (const id of ['files','data','tutorial','settings']) $('#page-' + id).classList.toggle('hidden', id !== tab);
@@ -84,7 +86,7 @@ document.querySelectorAll('.nav button').forEach(b => b.addEventListener('click'
 document.querySelectorAll('[data-settings]').forEach(b => b.addEventListener('click', () => navigate('settings', b.dataset.settings)));
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { const [tab, section] = b.dataset.go.split('-'); navigate(tab, section); }));
 function showAuth() {
- csrf = ''; items = []; queue.length = 0;
+ csrf = ''; items = []; queue.length = 0; selectedFiles.clear(); anchorID=focusedID=''; closeContextMenu();
  if (activeDialog) { activeDialog.close(); activeDialog.remove(); activeDialog = null; }
  document.querySelectorAll('[data-dirty]').forEach(clean);
  document.querySelectorAll('input[type=password]').forEach(e=>e.value='');$('#upload-results').replaceChildren();
@@ -105,7 +107,7 @@ async function refreshFiles() {
  $('#file-status').textContent = '正在刷新文件…';
  try {
   items = await api('/api/files');
-  for(const id of selectedShares)if(!items.some(x=>x.id===id&&x.shared))selectedShares.delete(id);
+  for(const id of selectedFiles)if(!items.some(x=>x.id===id))selectedFiles.delete(id);
   renderRows();
   $('#stat-count').textContent = items.length; $('#stat-size').textContent = format(items.reduce((s,x) => s + x.size, 0));
   const shared = items.filter(x => x.shared).length;
@@ -126,25 +128,40 @@ $('#show-start').addEventListener('click', () => { try { localStorage.removeItem
 $('#start-upload').addEventListener('click', () => $('#file-picker').click());
 $('#start-share').addEventListener('click', () => { if (items.length) window.FP.openShare(items[0]); });
 function renderRows() {
+ const previousFocus=document.activeElement?.dataset.focusKey;
+ closeContextMenu();
  const q = $('#search').value.trim().toLocaleLowerCase(), mode=$('#share-filter').value;
  const filtered = items.filter(x => x.name.toLocaleLowerCase().includes(q) && (mode==='all'||mode==='shared'&&x.shared||mode==='link'&&x.shared&&!x.featured||mode==='public'&&x.featured||mode==='private'&&!x.shared));
+ filtered.sort((a,b)=>sortDirection*(sortKey==='name'?a.name.localeCompare(b.name,'zh-CN',{numeric:true}):a[sortKey]-b[sortKey])||a.id.localeCompare(b.id));
+ visibleFiles=filtered;
+ if(!filtered.some(x=>x.id===focusedID))focusedID=filtered[0]?.id||'';
  $('#file-rows').replaceChildren(); $('#empty').classList.toggle('hidden', filtered.length !== 0);
  $('#empty-title').textContent = q||mode!=='all' ? '没有找到匹配的文件' : '这里还没有文件';
  $('#empty-hint').textContent = q||mode!=='all' ? '试试其他关键词或分享状态，或清除筛选查看全部文件。' : '上传后默认只有你能访问，需要时再开启分享。';
  $('#clear-search').classList.toggle('hidden', !q&&mode==='all');
- const eligible=filtered.filter(x=>x.shared),all=$('#select-shared');
- all.disabled=batchBusy||!eligible.length;all.checked=!!eligible.length&&eligible.every(x=>selectedShares.has(x.id));all.indeterminate=!all.checked&&eligible.some(x=>selectedShares.has(x.id));
- all.onchange=()=>{if(all.checked&&eligible.length>500){all.checked=false;message('每批最多选择 500 个文件，请先筛选范围。');return;}for(const item of eligible){if(all.checked)selectedShares.add(item.id);else selectedShares.delete(item.id);}renderRows();};
- $('#selection-count').textContent='已选择 '+selectedShares.size+' 个已分享文件';
- for(const id of ['batch-link','batch-public','batch-cancel','clear-selection'])$('#'+id).disabled=batchBusy||!selectedShares.size;
+ const eligible=filtered,all=$('#select-shared');
+ all.disabled=batchBusy||!eligible.length;all.checked=!!eligible.length&&eligible.every(x=>selectedFiles.has(x.id));all.indeterminate=!all.checked&&eligible.some(x=>selectedFiles.has(x.id));
+ all.onchange=()=>{if(all.checked&&eligible.length>500){all.checked=false;message('每批最多选择 500 个文件，请先筛选范围。');return;}for(const item of eligible){if(all.checked)selectedFiles.add(item.id);else selectedFiles.delete(item.id);}renderRows();};
+ const sharedCount=items.filter(x=>selectedFiles.has(x.id)&&x.shared).length;
+ $('#selection-count').textContent='已选择 '+selectedFiles.size+' 个文件'+(selectedFiles.size?' · '+sharedCount+' 个已分享':'');
+ for(const id of ['batch-link','batch-public','batch-cancel']) { $('#'+id).disabled=batchBusy||!sharedCount; $('#'+id).title='仅处理所选文件中已开启分享的 '+sharedCount+' 项'; }
+ $('#clear-selection').disabled=batchBusy||!selectedFiles.size;
+ $('.batch-actions').hidden=!selectedFiles.size;
+ for(const th of document.querySelectorAll('[data-sort]'))th.closest('th').setAttribute('aria-sort',th.dataset.sort===sortKey?(sortDirection===1?'ascending':'descending'):'none');
  $('#file-rows').inert=batchBusy;
  for (const item of filtered) {
   const tr = node('tr'), td = node('td'), cell = node('div', '', 'file-cell'), meta = node('div');
+  tr.dataset.fileId=item.id;tr.dataset.focusKey='file-'+item.id;tr.tabIndex=item.id===(focusedID||filtered[0]?.id)?0:-1;
+  tr.classList.toggle('selected',selectedFiles.has(item.id));tr.setAttribute('aria-selected',String(selectedFiles.has(item.id)));
+  tr.addEventListener('click',e=>{if(!e.target.closest('button,a,input,summary,details'))selectFile(item,e);});
+  tr.addEventListener('dblclick',e=>{if(!e.target.closest('button,a,input,summary,details'))openProperties(item);});
+  tr.addEventListener('contextmenu',e=>{if(e.target.closest('input'))return;e.preventDefault();if(!selectedFiles.has(item.id))selectFile(item,{});showContextMenu(item,e.clientX,e.clientY);});
+  tr.addEventListener('keydown',e=>fileKey(e,item));
   const name = node('div', item.name, 'file-name');
   const info = node('div', item.storage_node ? '远端存储' : '本机存储', 'file-meta');
   info.append(node('span', item.featured ? '公开分享 · 主页展示' : item.shared ? '私密分享 · 仅链接' : '未分享', 'badge' + (item.shared ? ' shared' : '')));
-  const select=node('input');select.type='checkbox';select.checked=selectedShares.has(item.id);select.disabled=!item.shared||batchBusy;select.setAttribute('aria-label','选择已分享文件：'+item.name);
-  select.addEventListener('change',()=>{if(select.checked&&selectedShares.size>=500){select.checked=false;message('每批最多选择 500 个文件。');return;}if(select.checked)selectedShares.add(item.id);else selectedShares.delete(item.id);renderRows();});
+  const select=node('input');select.type='checkbox';select.checked=selectedFiles.has(item.id);select.disabled=batchBusy;select.setAttribute('aria-label','选择文件：'+item.name);select.dataset.focusKey='check-'+item.id;
+  select.addEventListener('click',e=>{e.stopPropagation();selectFile(item,{ctrlKey:true,shiftKey:e.shiftKey});});
   meta.append(name, info); cell.append(select,node('div','▤','file-icon'), meta); td.append(cell);
   const size = node('td', format(item.size), 'file-size'), created = node('td',date(item.created_at),'hide-mobile');
   const actions = node('td'), wrap = node('div','','row-actions'); actions.className = 'file-actions';
@@ -156,9 +173,86 @@ function renderRows() {
   const list = node('div','','more-actions');
   list.append(action('存储与副本',()=>{more.open=false;window.FP.openStorage(item);}));
   if (item.storage_node || window.FP.hasStorageNodes) list.append(action('移动', () => { more.open = false; window.FP.openMove(item); }));
-  list.append(action('重命名', () => rename(item)), action('删除', () => remove(item),'danger-btn'));
+  list.append(action('重命名', () => rename(item)), action('删除', () => remove(item),'danger-btn'),action('属性',()=>openProperties(item)));
   const hash = node('small','文件校验码（SHA-256，用于核对完整性）：' + item.sha256); list.append(hash); more.append(list); wrap.append(more); actions.append(wrap); tr.append(td,size,created,actions); $('#file-rows').append(tr);
  }
+ if(previousFocus)document.querySelector('[data-focus-key="'+CSS.escape(previousFocus)+'"]')?.focus({preventScroll:true});
+}
+function focusFile(id) {
+ focusedID=id;
+ for(const row of $('#file-rows').children)row.tabIndex=row.dataset.fileId===id?0:-1;
+ document.querySelector('[data-file-id="'+CSS.escape(id)+'"]')?.focus({preventScroll:true});
+}
+function selectFile(item,e) {
+ if(batchBusy)return;
+ if(e.shiftKey&&visibleFiles.some(x=>x.id===anchorID)) {
+  const a=visibleFiles.findIndex(x=>x.id===anchorID),b=visibleFiles.findIndex(x=>x.id===item.id);
+  const range=visibleFiles.slice(Math.min(a,b),Math.max(a,b)+1).map(x=>x.id);
+  const next=new Set(e.ctrlKey||e.metaKey?selectedFiles:[]);for(const id of range)next.add(id);
+  if(next.size>500){message('每批最多选择 500 个文件，请先筛选范围。');return;}
+  selectedFiles.clear();for(const id of next)selectedFiles.add(id);
+ } else {
+  if(!e.ctrlKey&&!e.metaKey)selectedFiles.clear();
+  if(selectedFiles.has(item.id))selectedFiles.delete(item.id);
+  else {if(selectedFiles.size>=500){message('每批最多选择 500 个文件。');return;}selectedFiles.add(item.id);}
+  anchorID=item.id;
+ }
+ focusedID=item.id;
+ // Update selection in place so the second click of a double click keeps its target.
+ syncSelection();focusFile(item.id);
+}
+function syncSelection() {
+ for(const row of $('#file-rows').children){const selected=selectedFiles.has(row.dataset.fileId);row.classList.toggle('selected',selected);row.setAttribute('aria-selected',String(selected));row.querySelector('input[type=checkbox]').checked=selected;}
+ const shared=items.filter(x=>selectedFiles.has(x.id)&&x.shared).length;
+ $('#selection-count').textContent='已选择 '+selectedFiles.size+' 个文件'+(selectedFiles.size?' · '+shared+' 个已分享':'');
+ for(const id of ['batch-link','batch-public','batch-cancel']){$('#'+id).disabled=batchBusy||!shared;$('#'+id).title='仅处理所选文件中已开启分享的 '+shared+' 项';}
+ $('#clear-selection').disabled=batchBusy||!selectedFiles.size;
+ $('.batch-actions').hidden=!selectedFiles.size;
+ const all=$('#select-shared');all.checked=!!visibleFiles.length&&visibleFiles.every(x=>selectedFiles.has(x.id));all.indeterminate=!all.checked&&visibleFiles.some(x=>selectedFiles.has(x.id));
+}
+function fileKey(e,item) {
+ if(e.target!==e.currentTarget||batchBusy)return;
+ const i=visibleFiles.findIndex(x=>x.id===item.id);
+ if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)) {
+  e.preventDefault();const next=visibleFiles[e.key==='Home'?0:e.key==='End'?visibleFiles.length-1:Math.max(0,Math.min(visibleFiles.length-1,i+(e.key==='ArrowDown'?1:-1)))];
+  if(e.ctrlKey&&!e.shiftKey)focusFile(next.id);else selectFile(next,e);
+  document.activeElement?.scrollIntoView({block:'nearest'});
+ } else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='a') {e.preventDefault();if(visibleFiles.length>500){message('每批最多选择 500 个文件，请先筛选范围。');return;}for(const x of visibleFiles)selectedFiles.add(x.id);syncSelection();}
+ else if(e.key===' ') {e.preventDefault();selectFile(item,{ctrlKey:true,shiftKey:e.shiftKey});}
+ else if(e.key==='Escape') {e.preventDefault();selectedFiles.clear();syncSelection();}
+ else if(e.key==='Enter') {e.preventDefault();openProperties(item);}
+ else if(e.key==='F2'&&selectedFiles.size===1) {e.preventDefault();rename(items.find(x=>selectedFiles.has(x.id)));}
+ else if(e.key==='Delete'&&selectedFiles.size===1) {e.preventDefault();remove(items.find(x=>selectedFiles.has(x.id)));}
+ else if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10') {e.preventDefault();const r=e.currentTarget.getBoundingClientRect();showContextMenu(item,r.x+30,r.y+30);}
+}
+function closeContextMenu(restore=false) {if(!contextMenu)return;contextMenu.remove();contextMenu=null;if(restore&&focusedID)focusFile(focusedID);}
+function showContextMenu(item,x,y) {
+ if(!selectedFiles.has(item.id))selectFile(item,{});
+ closeContextMenu();contextMenu=node('div','','file-menu');contextMenu.setAttribute('role','menu');contextMenu.setAttribute('aria-label','文件操作');
+ const add=(text,fn)=>{const b=action(text,()=>{closeContextMenu(true);fn();});b.setAttribute('role','menuitem');contextMenu.append(b);};
+ if(selectedFiles.size<=1) {
+  add('打开属性　Enter',()=>openProperties(item));
+  add('下载',()=>{const a=node('a');a.href='/api/files/'+encodeURIComponent(item.id);a.download=item.name;a.click();});
+  add('分享设置',()=>window.FP.openShare(item));
+  add('存储与副本',()=>window.FP.openStorage(item));
+  if(item.storage_node||window.FP.hasStorageNodes)add('移动到…',()=>window.FP.openMove(item));
+  add('重命名　F2',()=>rename(item));add('删除　Delete',()=>remove(item));
+  if(item.shared)add('取消分享',()=>window.FP.cancelShare(item));
+ } else {
+  const shared=items.filter(x=>selectedFiles.has(x.id)&&x.shared).length;
+  contextMenu.append(node('div','已选择 '+selectedFiles.size+' 项 · '+shared+' 项已分享','menu-caption'));
+  if(shared)for(const [id,label] of [['batch-link','已分享项转私密'],['batch-public','已分享项转公开'],['batch-cancel','取消已分享项的分享']])add(label,()=>$('#'+id).click());
+  add('清空选择',()=>{selectedFiles.clear();syncSelection();});
+ }
+ document.body.append(contextMenu);const rect=contextMenu.getBoundingClientRect();contextMenu.style.left=Math.max(8,Math.min(x,innerWidth-rect.width-8))+'px';contextMenu.style.top=Math.max(8,Math.min(y,innerHeight-rect.height-8))+'px';contextMenu.querySelector('button').focus();
+ contextMenu.addEventListener('keydown',e=>{const buttons=[...contextMenu.querySelectorAll('button')],i=buttons.indexOf(document.activeElement);if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(i+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();}else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();closeContextMenu(true);}});
+}
+document.addEventListener('pointerdown',e=>{if(contextMenu&&!contextMenu.contains(e.target))closeContextMenu();});
+window.addEventListener('resize',()=>closeContextMenu());window.addEventListener('scroll',()=>closeContextMenu(),true);
+function openProperties(item) {
+ const modal=node('dialog','','modal');modal.setAttribute('aria-label','文件属性');modal.append(node('h2','文件属性'));
+ const facts=node('dl','','property-list');for(const [label,value] of [['文件名',item.name],['大小',format(item.size)],['上传时间',date(item.created_at)],['分享状态',item.featured?'公开分享':item.shared?'私密分享':'未分享'],['SHA-256',item.sha256]])facts.append(node('dt',label),node('dd',value));modal.append(facts);
+ const buttons=node('div','','modal-actions');let close;buttons.append(action('分享设置',()=>{close();window.FP.openShare(item);}),action('关闭',()=>close(),'primary-btn'));modal.append(buttons);close=openDialog(modal);
 }
 async function refreshData() {
  if (dataBusy || !csrf) return; dataBusy = true; $('#data-status').textContent = '正在读取磁盘信息…';
@@ -172,8 +266,13 @@ async function refreshData() {
  finally { dataBusy = false; }
 }
 async function rename(item) {
- const name = prompt('输入新的文件名（不会改变文件内容和分享链接）',item.name); if (name === null || name === item.name) return;
- try { await api('/api/files/' + encodeURIComponent(item.id), {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); toast('文件名已更新'); await refreshFiles(); } catch(e) { message(e.message); }
+ const row=document.querySelector('[data-file-id="'+CSS.escape(item.id)+'"]'),nameCell=row?.querySelector('.file-name');if(!nameCell||nameCell.querySelector('input'))return;
+ closeContextMenu();row.querySelector('details').open=false;
+ const input=node('input');input.value=item.name;input.setAttribute('aria-label','重命名文件');nameCell.replaceChildren(input);input.focus();const dot=item.name.lastIndexOf('.');input.setSelectionRange(0,dot>0?dot:item.name.length);
+ let ended=false;
+ const finish=async(save,restoreFocus=false)=>{if(ended)return;ended=true;const name=input.value.trim();if(!save||name===item.name){nameCell.textContent=item.name;if(restoreFocus)focusFile(item.id);return;}input.disabled=true;
+  try{await api('/api/files/'+encodeURIComponent(item.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});toast('文件名已更新');await refreshFiles();if(restoreFocus)focusFile(item.id);}catch(e){ended=false;input.disabled=false;message(e.message);input.focus();}};
+ input.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();finish(true,true);}if(e.key==='Escape'){e.preventDefault();finish(false,true);}});input.addEventListener('blur',()=>finish(true));
 }
 async function remove(item) {
  if (!confirm('确定永久删除“' + item.name + '”及其所有存储副本？文件无法从面板恢复；分享链接、介绍页和相关图片也将失效。离线副本会保留记录并等待清理。')) return;
@@ -208,15 +307,18 @@ async function drainQueue() {
   }
  } finally { uploading = false; $('#progress').classList.add('hidden'); $('#upload-status').textContent = '队列处理完毕，请查看每个文件的结果。'; await Promise.all([refreshFiles(),refreshData()]); }
 }
-$('#clear-search').addEventListener('click', () => { $('#search').value = '';$('#share-filter').value='all';selectedShares.clear(); renderRows(); $('#search').focus(); });
-$('#search').addEventListener('input',()=>{selectedShares.clear();renderRows();});
-$('#share-filter').addEventListener('change',()=>{selectedShares.clear();renderRows();});
-$('#clear-selection').addEventListener('click',()=>{selectedShares.clear();renderRows();});
+$('#clear-search').addEventListener('click', () => { $('#search').value = '';$('#share-filter').value='all';selectedFiles.clear(); renderRows(); $('#search').focus(); });
+$('#search').addEventListener('input',()=>{selectedFiles.clear();renderRows();});
+$('#share-filter').addEventListener('change',()=>{selectedFiles.clear();renderRows();});
+$('#clear-selection').addEventListener('click',()=>{selectedFiles.clear();renderRows();});
+document.querySelectorAll('[data-sort]').forEach(b=>b.addEventListener('click',()=>{sortDirection=sortKey===b.dataset.sort?-sortDirection:1;sortKey=b.dataset.sort;renderRows();}));
+document.querySelector('.table-wrap').addEventListener('click',e=>{if(e.target.closest('tr,button,a,input,summary'))return;selectedFiles.clear();syncSelection();});
+document.addEventListener('click',e=>{for(const d of document.querySelectorAll('.row-actions details[open]'))if(!d.contains(e.target))d.open=false;});
 for(const [id,mode,label] of [['batch-link','link','转为私密分享（仅凭链接访问，不在主页展示）'],['batch-public','public','转为公开分享（在主页展示）'],['batch-cancel','private','取消分享（原分享链接和下载授权失效，文件保留）']])$('#'+id).addEventListener('click',async()=>{
- if(batchBusy||!selectedShares.size)return;
- const ids=[...selectedShares];if(!confirm('将选中的 '+ids.length+' 个已分享文件'+label+'？'))return;
+ if(batchBusy||!selectedFiles.size)return;
+ const ids=items.filter(x=>selectedFiles.has(x.id)&&x.shared).map(x=>x.id);if(!ids.length||!confirm('将选中的 '+ids.length+' 个已分享文件'+label+'？'+(ids.length<selectedFiles.size?' 未分享文件不受影响。':'')))return;
  batchBusy=true;renderRows();
- try{await api('/api/shares/batch',json({ids,mode}));selectedShares.clear();await refreshFiles();toast('已处理 '+ids.length+' 个文件');}catch(e){message(e.message);}finally{batchBusy=false;renderRows();}
+ try{await api('/api/shares/batch',json({ids,mode}));selectedFiles.clear();await refreshFiles();toast('已处理 '+ids.length+' 个文件');}catch(e){message(e.message);}finally{batchBusy=false;renderRows();}
 });
 for (const id of ['choose-upload','top-upload']) $('#' + id).addEventListener('click', () => $('#file-picker').click());
 $('#file-picker').addEventListener('change',e => { enqueue([...e.target.files]); e.target.value = ''; });

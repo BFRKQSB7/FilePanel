@@ -6,6 +6,7 @@ A lightweight single-admin file hosting and publishing panel for personal VPS in
 
 ## Features and scope
 
+- Industrial archive styling with light/dark modes; private shares omit search and home navigation. File lists support click/Ctrl/Shift selection, column sorting, context menus, double-click properties, and inline F2 rename.
 - Private-by-default uploads, streaming size/SHA-256 validation, downloads, renaming and deletion.
 - Public resource pages, opt-in home-page listings, revocable download authorization, Range requests and persistent traffic accounting/protection.
 - Link-only or listed sharing, bulk sharing controls and three download-page layouts per file.

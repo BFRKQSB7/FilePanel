@@ -13,7 +13,7 @@ Current milestone: NONE（M1–M4 已完成）
 | [T07 — 安装权限与本机卸载](T07-安装权限与本机卸载.md) | DONE | L3 | GPT-6.1 Sol | HIGH | M4 | T05 |
 | [T08 — 更新恢复与首版发布验收](T08-更新恢复与首版发布验收.md) | DONE | L4 | GPT-6 Astra | HIGH | M4 | T03, T04, T06, T07 |
 
-Recommended next task: NONE（现有任务全部完成）
+Recommended next task: 私密页导航隔离、工业风视觉与资源管理器交互（IN_PROGRESS）
 
 追加任务状态：当前 Web UI 视觉与交互细节打磨 — DONE（2026-10-19）。
 

@@ -57,6 +57,30 @@ async function main() {
   await page.locator('#search').fill('no-match');
   check((await page.locator('#empty-title').textContent()).includes('没有找到匹配'),'search empty state differs from empty storage');
   await page.locator('#clear-search').click();check(await page.locator('#file-rows tr').count()===4,'clear search restores files');
+  const rows=page.locator('#file-rows tr');
+  await rows.nth(0).locator('.file-name').click();
+  check(await page.locator('#file-rows tr.selected').count()===1,'click selects unshared files');
+  await rows.nth(2).locator('.file-name').click({modifiers:['Shift']});
+  check(await page.locator('#file-rows tr.selected').count()===3,'shift selects contiguous rows');
+  await rows.nth(1).locator('.file-name').click({modifiers:['Control']});
+  check(await page.locator('#file-rows tr.selected').count()===2,'ctrl toggles selection');
+  await rows.nth(0).locator('.file-name').dblclick();
+  await page.getByRole('dialog',{name:'文件属性'}).waitFor({state:'visible'});await page.keyboard.press('Escape');
+  check(await rows.nth(0).evaluate(e=>e===document.activeElement),'properties closes back to focused file');
+  await page.keyboard.press('F2');const renameInput=page.getByRole('textbox',{name:'重命名文件'});await renameInput.waitFor({state:'visible'});
+  const oldName=await renameInput.inputValue();await renameInput.fill('cancelled-rename.txt');await renameInput.press('Escape');
+  check(await rows.nth(0).locator('.file-name').innerText()===oldName,'Escape cancels inline rename');
+  await page.keyboard.press('F2');await renameInput.fill('Explorer-renamed.txt');await renameInput.press('Enter');
+  await page.getByText('Explorer-renamed.txt',{exact:true}).waitFor({state:'visible'});
+  check(true,'F2 Enter saves inline rename');
+  await rows.nth(0).locator('.file-name').click({button:'right'});
+  await page.getByRole('menu',{name:'文件操作'}).waitFor({state:'visible'});await page.keyboard.press('ArrowDown');await page.keyboard.press('Escape');
+  check(await page.getByRole('menu').count()===0,'context menu supports arrows and Escape');
+  await page.keyboard.press('Control+a');check(await page.locator('#file-rows tr.selected').count()===4,'Ctrl+A selects current file list');
+  await page.keyboard.press('Escape');check(await page.locator('#file-rows tr.selected').count()===0,'Escape clears selection');
+  await page.getByRole('button',{name:'文件名',exact:true}).click();
+  check(await page.locator('th[aria-sort="ascending"] [data-sort="name"]').count()===1,'column header sorts ascending');
+  await page.getByRole('button',{name:'上传时间',exact:true}).click();await page.getByRole('button',{name:'上传时间',exact:true}).click();
   const sharedBytes=await (await context.request.get(base+await page.locator('#file-rows tr').first().getByRole('link',{name:'下载',exact:true}).getAttribute('href'))).body();
   await page.getByRole('button',{name:'分享',exact:true}).first().click();
   const dialog = page.getByRole('dialog',{name:'分享设置'});
@@ -67,6 +91,9 @@ async function main() {
   await page.waitForFunction(()=>document.querySelector('#stat-access').textContent.includes('1 个分享'));
   const linkOnlyURL=await page.getByRole('textbox',{name:'稳定分享链接'}).inputValue();
   check((await fetch(linkOnlyURL)).status===200,'link-only share page is accessible anonymously');
+  const privateVisitor=await context.newPage();await privateVisitor.goto(linkOnlyURL);
+  check(await privateVisitor.locator('form[role=search], a.brand, a[href="/"]').count()===0,'private share has no search or homepage navigation');
+  await privateVisitor.screenshot({path:path.join(temp,'private-share.png'),fullPage:true});await privateVisitor.close();
   check(!(await (await fetch(base+'/')).text()).includes(new URL(linkOnlyURL).pathname),'link-only share is absent from homepage');
   const credential=(await fetch(linkOnlyURL+'/get',{redirect:'manual'})).headers.get('location');
   check(!!credential,'link-only share issues a download credential');
@@ -268,7 +295,7 @@ async function main() {
      if(!e.labels.length && !e.getAttribute('aria-label'))bad.push('unlabelled select');
     }
     for(const e of document.querySelectorAll('button,a.quiet-btn,a.ghost-btn,input:not([type=checkbox]):not([type=radio]),select,summary'))if(visible(e) && e.getBoundingClientRect().height<43)bad.push('small target: '+(e.id||e.textContent.slice(0,30)));
-    for(const e of document.querySelectorAll('*'))if(visible(e)&&getComputedStyle(e).backgroundImage.includes('gradient('))bad.push('gradient: '+e.className);
+    for(const e of document.querySelectorAll('*'))if(visible(e)&&e!==document.body&&getComputedStyle(e).backgroundImage.includes('gradient('))bad.push('gradient: '+e.className);
     return bad;
    });
    check(problems.length===0,name+': '+(problems.join('; ')||'controls, labels and layout'));
@@ -302,6 +329,15 @@ async function main() {
   await page.locator('#refresh-btn').focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
   check(await page.locator('#refresh-btn').evaluate(e=>getComputedStyle(e).transitionDuration.split(',').every(t=>parseFloat(t)===0) && getComputedStyle(e).outlineStyle!=='none'),'reduced motion and keyboard focus remain visible');
   await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.locator('[data-tab=files]').click();await page.setViewportSize({width:1440,height:1000});
+  await page.emulateMedia({colorScheme:'dark'});
+  check(await page.evaluate(()=>getComputedStyle(document.documentElement).colorScheme==='dark'),'admin follows dark color scheme');
+  await page.screenshot({path:path.join(temp,'files-dark-1440.png'),fullPage:true,animations:'disabled'});
+  await page.locator('#file-rows tr').first().locator('.file-name').click();
+  await page.keyboard.press('Shift+F10');await page.getByRole('menu',{name:'文件操作'}).waitFor({state:'visible'});
+  check(await page.getByRole('menu').evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}),'keyboard context menu stays inside viewport');
+  await page.screenshot({path:path.join(temp,'explorer-menu.png'),fullPage:false,animations:'disabled'});await page.keyboard.press('Escape');await page.keyboard.press('Escape');
+  await page.emulateMedia({colorScheme:'light'});
   const publicPage=await context.newPage();
   for(const scheme of ['light','dark']) {
    await publicPage.emulateMedia({colorScheme:scheme});

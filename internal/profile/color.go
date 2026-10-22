@@ -12,7 +12,7 @@ type rgb struct{ r, g, b float64 }
 var (
 	white    = rgb{255, 255, 255}
 	black    = rgb{0, 0, 0}
-	darkCard = rgb{0x17, 0x1f, 0x33} // 与 publicCSS 暗色模式的 --card 保持一致
+	darkCard = rgb{0x22, 0x29, 0x25} // 与 publicCSS 暗色模式的 --card 保持一致
 )
 
 func parseHex(s string) (rgb, bool) {
@@ -101,10 +101,10 @@ func themeCSS(accent string, urls map[Role]string) string {
 	var b strings.Builder
 	if c, ok := parseHex(accent); ok {
 		deep := mix(c, black, 0.2)
-		fmt.Fprintf(&b, ":root{--blue:%s;--soft:%s;--btn1:%s;--btn2:%s;--mark1:%s;--mark2:%s;--hero1:%s;--hero2:%s;--hero3:%s}",
+		fmt.Fprintf(&b, ":root{--button-ink:#fff;--mark-ink:#fff;--hero-ink:#fff;--blue:%s;--soft:%s;--btn1:%s;--btn2:%s;--mark1:%s;--mark2:%s;--hero1:%s;--hero2:%s;--hero3:%s}",
 			c.hex(), lightSoft(c).hex(), c.hex(), deep.hex(), c.hex(), deep.hex(),
 			c.hex(), mix(c, black, 0.15).hex(), mix(c, black, 0.3).hex())
-		fmt.Fprintf(&b, "@media(prefers-color-scheme:dark){:root{--blue:%s;--soft:%s}}", forDark(c, darkSoft(c)).hex(), darkSoft(c).hex())
+		fmt.Fprintf(&b, "@media(prefers-color-scheme:dark){:root{--button-ink:#fff;--mark-ink:#fff;--hero-ink:#fff;--blue:%s;--soft:%s}}", forDark(c, darkSoft(c)).hex(), darkSoft(c).hex())
 	}
 	if u := safeURL(urls[Banner]); u != "" {
 		fmt.Fprintf(&b, `.hero{background-image:linear-gradient(rgba(10,16,40,.55),rgba(10,16,40,.55)),url("%s");background-size:cover;background-position:center}`, u)
