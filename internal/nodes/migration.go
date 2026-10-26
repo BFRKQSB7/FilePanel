@@ -130,6 +130,7 @@ func (p *Panel) ExportMigration(password string) ([]byte, error) {
 		}
 		if s, e := p.Shares.Get(v.ID); e == nil {
 			s.CoverAsset = ""
+			s.GalleryAssets = []string{} // Local images are not included in a node metadata migration.
 			entry.Share = &s
 		}
 		b.Files = append(b.Files, entry)

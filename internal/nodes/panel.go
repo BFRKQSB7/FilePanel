@@ -258,7 +258,8 @@ func (p *Panel) Probe(ctx context.Context, id string) error {
 		Schema   int    `json:"schema"`
 	}
 	e = call(ctx, c, "GET", n.Endpoint, prefix+"/health", n.Credential, nil, &out)
-	if e == nil && (out.ID != n.ID || out.PanelID != p.ID() || out.Protocol != release.Protocol || out.Schema != release.Schema) {
+	// Schema 7 only adds panel image metadata; schema 6 storage peers use the same protocol.
+	if e == nil && (out.ID != n.ID || out.PanelID != p.ID() || out.Protocol != release.Protocol || out.Schema < 6 || out.Schema > release.Schema) {
 		e = ErrDenied
 	}
 	message := ""

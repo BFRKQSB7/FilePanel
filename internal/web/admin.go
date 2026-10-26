@@ -3,6 +3,8 @@ package web
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"filepanel/internal/share"
 	"filepanel/internal/usage"
@@ -16,6 +18,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/files/{id}/assets", s.uploadAsset)
 	mux.HandleFunc("DELETE /api/files/{id}/assets/{asset}", s.deleteAsset)
 	mux.HandleFunc("GET /api/assets/{id}", s.adminAsset)
+	mux.HandleFunc("GET /api/assets", s.assetLibrary)
 	mux.HandleFunc("POST /api/markdown/preview", s.previewMarkdown)
 	mux.HandleFunc("GET /api/usage", s.usageStatus)
 	mux.HandleFunc("PUT /api/usage/config", s.usageConfig)
@@ -35,9 +38,10 @@ func (s *Server) adminScript(w http.ResponseWriter, r *http.Request) {
 
 type shareView struct {
 	share.Share
-	Assets  []share.Asset `json:"assets"`
-	Preview string        `json:"preview"`
-	URL     string        `json:"url"`
+	Assets     []share.Asset       `json:"assets"`
+	Preview    string              `json:"preview"`
+	URL        string              `json:"url"`
+	AssetUsage map[string][]string `json:"asset_usage"`
 }
 
 func (s *Server) shareView(fileID string) (shareView, error) {
@@ -49,10 +53,14 @@ func (s *Server) shareView(fileID string) (shareView, error) {
 	if err != nil {
 		return shareView{}, err
 	}
-	return shareView{Share: sh, Assets: list, Preview: share.RenderMarkdown(sh.Markdown, s.shares.AssetOwned(fileID)), URL: s.entryURL("/s/" + sh.Slug)}, nil
+	return shareView{Share: sh, Assets: list, Preview: share.RenderMarkdown(sh.Markdown, s.shares.AssetOwned(fileID)), URL: s.entryURL("/s/" + sh.Slug), AssetUsage: share.AssetUsage(sh)}, nil
 }
 
 func (s *Server) shareError(w http.ResponseWriter, err error) {
+	if errors.Is(err, share.ErrAssetInUse) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if errors.Is(err, share.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "文件不存在或不可用")
 		return
@@ -171,19 +179,41 @@ func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
-	file, _, err := r.FormFile("image")
+	file, header, err := r.FormFile("image")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "请选择要上传的图片")
 		return
 	}
 	defer file.Close()
-	asset, err := s.shares.AddAsset(r.PathValue("id"), file)
+	asset, err := s.shares.AddAsset(r.PathValue("id"), file, header.Filename)
 	if err != nil {
 		s.shareError(w, err)
 		return
 	}
 	_ = s.meter.RecordReceived(usage.CategoryUpload, asset.Size)
 	writeJSON(w, http.StatusCreated, asset)
+}
+
+func (s *Server) assetLibrary(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 1 || page > 1000000 {
+		page = 1
+	}
+	status := q.Get("status")
+	if status != "" && status != "all" && status != "used" && status != "unused" {
+		writeError(w, 400, "未知素材分类")
+		return
+	}
+	result, err := s.shares.Library(q.Get("q"), status, q.Get("file_id"), page)
+	if err != nil {
+		s.shareError(w, err)
+		return
+	}
+	writeJSON(w, 200, result)
 }
 
 func (s *Server) deleteAsset(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +254,8 @@ func (s *Server) previewMarkdown(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"html": share.RenderMarkdown(in.Markdown, s.shares.AssetOwned(in.FileID))})
+	html := share.RenderMarkdown(in.Markdown, s.shares.AssetOwned(in.FileID))
+	writeJSON(w, http.StatusOK, map[string]string{"html": strings.ReplaceAll(html, `src="/a/`, `src="/api/assets/`)})
 }
 
 func (s *Server) usageStatus(w http.ResponseWriter, r *http.Request) {

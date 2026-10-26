@@ -203,8 +203,11 @@ func TestDangerousMarkdownAndAssetBoundaries(t *testing.T) {
 		}
 	}
 	md := "# 标题\n<script>alert(1)</script>\n\n[点我](javascript:alert(1)) [ok](https://example.com/a?b=1) [d](data:text/html,<script>1</script>)\n\n" +
-		"![本分享](asset:" + assetA.ID + ") ![外链](https://evil.test/x.png) ![别人的](asset:" + strings.Repeat("Z", 24) + ")\n\n" +
+		"![本分享](asset:" + assetA.ID + ") ![外链](https://evil.test/x.png)\n\n" +
 		"<img src=x onerror=alert(1)> **粗** `<b>` \n\n```\n<script>x</script>\n```\n"
+	if _, _, err := e.deps.Shares.Update(a.ID, share.Input{Markdown: "![别人的](asset:" + strings.Repeat("Z", 24) + ")"}); err == nil {
+		t.Fatal("missing asset reference accepted")
+	}
 	if _, _, err := e.deps.Shares.Update(a.ID, share.Input{Title: `<b>t</b>`, Summary: `<img src=x onerror=1>`, Markdown: md, Enabled: true, Featured: true}); err != nil {
 		t.Fatal(err)
 	}

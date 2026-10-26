@@ -23,7 +23,7 @@ import (
 	"filepanel/internal/usage"
 )
 
-//go:embed admin.css index.html admin.js admin-ext.js access.js nodes.js moves.js update.js icons.svg vendor/*
+//go:embed admin.css index.html admin.js admin-ext.js asset-library.js access.js nodes.js moves.js update.js icons.svg vendor/*
 var assets embed.FS
 
 type Server struct {
@@ -104,6 +104,12 @@ func NewServer(d Deps, secure bool) http.Handler {
 	mux.HandleFunc("GET /s/{slug}/get", server.getLink)
 	mux.HandleFunc("GET /d/{id}", server.content)
 	mux.HandleFunc("GET /a/{id}", server.publicAsset)
+	mux.HandleFunc("GET /asset-library.js", func(w http.ResponseWriter, r *http.Request) {
+		data, _ := assets.ReadFile("asset-library.js")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(data)
+	})
 	mux.HandleFunc("GET /admin", server.index)
 	mux.HandleFunc("GET /icons.svg", func(w http.ResponseWriter, r *http.Request) {
 		data, _ := assets.ReadFile("icons.svg")

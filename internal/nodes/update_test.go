@@ -17,10 +17,12 @@ func TestNodeUpdateRejectsOfflineAndIncompatiblePeers(t *testing.T) {
 	id := n.n.Identity.ID
 	var calls atomic.Int32
 	var protocol atomic.Int32
+	var schema atomic.Int32
+	schema.Store(release.Schema)
 	protocol.Store(release.Protocol)
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == prefix+"/health" {
-			json.NewEncoder(w).Encode(map[string]any{"id": id, "panel_id": h.p.ID(), "protocol": protocol.Load(), "schema": release.Schema})
+			json.NewEncoder(w).Encode(map[string]any{"id": id, "panel_id": h.p.ID(), "protocol": protocol.Load(), "schema": schema.Load()})
 			return
 		}
 		calls.Add(1)
@@ -36,6 +38,20 @@ func TestNodeUpdateRejectsOfflineAndIncompatiblePeers(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatal("not explicitly dispatched")
 	}
+	protocol.Store(99)
+	schema.Store(6)
+	if e = h.p.Probe(context.Background(), id); e == nil {
+		t.Fatal("schema compatibility bypassed protocol check")
+	}
+	protocol.Store(release.Protocol)
+	if e = h.p.Probe(context.Background(), id); e != nil {
+		t.Fatal("schema 6 peer rejected", e)
+	}
+	schema.Store(release.Schema + 1)
+	if e = h.p.Probe(context.Background(), id); e == nil {
+		t.Fatal("future schema accepted")
+	}
+	schema.Store(release.Schema)
 	protocol.Store(99)
 	if _, e = h.p.SoftwareUpdate(context.Background(), id, true); e == nil {
 		t.Fatal("incompatible node updated")

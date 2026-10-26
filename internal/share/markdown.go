@@ -9,6 +9,13 @@ import (
 
 var assetRef = regexp.MustCompile(`^asset:([A-Za-z0-9_-]{16,64})$`)
 
+// MarkdownAssets uses the actual renderer: examples inside code are not references.
+func MarkdownAssets(src string) map[string]bool {
+	refs := map[string]bool{}
+	RenderMarkdown(src, func(id string) bool { refs[id] = true; return true })
+	return refs
+}
+
 // RenderMarkdown 把受限 Markdown 转为 HTML。所有文本一律转义，不接受原始 HTML；
 // 链接只允许 http/https/mailto，图片只能引用本分享自己的素材对象（asset:ID）。
 // assetOK 为 nil 时一律不渲染图片。

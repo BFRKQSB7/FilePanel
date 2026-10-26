@@ -21,7 +21,7 @@ const field = (label, input, hint) => { if (!input.id) input.id = 'field-' + (++
 
 let shareOpening = false;
 
-async function openShare(item) {
+async function openShare(item, focusImages = false) {
   let closeModal=()=>{};
   if (shareOpening || document.querySelector("dialog[open]")) return;
   shareOpening = true;
@@ -52,31 +52,49 @@ async function openShare(item) {
   const status = el('p', { role:'status' });
   const assets = el('div', { class: 'section-sub' });
   let cover = view.cover_asset_id;
+  const gallery = new Set(view.gallery_assets || []), uploaded = new Set();
+  let assetFilter = 'all';
+  const assetFilters=el('div',{class:'file-types',role:'group','aria-label':'本文件素材分类'});
+  for(const [value,label] of [['all','全部'],['new','本次上传'],['used','使用中'],['unused','未使用']]) {
+    assetFilters.append(el('button',{type:'button','data-asset-filter':value,text:label,onclick:()=>{assetFilter=value;drawAssets();}}));
+  }
+  const savedUses = a => view.asset_usage?.[a.id] || [];
+  // Unsaved text is conservative; after saving, the server renderer is authoritative.
+  const inDraft = a => cover===a.id || gallery.has(a.id) || (markdown.value!==view.markdown && markdown.value.includes('asset:'+a.id));
 
   function drawAssets() {
     assets.replaceChildren();
+    for(const b of assetFilters.children)b.setAttribute('aria-pressed',b.dataset.assetFilter===assetFilter?'true':'false');
     if (!view.assets.length) { assets.append('还没有图片。最多 8 张，每张不超过 2 MiB（PNG/JPEG/GIF/WebP）。'); return; }
-    for (const a of view.assets) {
-      const img = el('img', { src: '/api/assets/' + encodeURIComponent(a.id), alt: '素材', style: 'width:84px;height:56px;object-fit:cover;border-radius:var(--radius-sm);border:1px solid var(--line)' });
+    const filtered=view.assets.filter(a=>assetFilter==='new'?uploaded.has(a.id):assetFilter==='used'?savedUses(a).length:assetFilter==='unused'?!savedUses(a).length:true);
+    if(!filtered.length)assets.append(el('p',{text:'此分类暂无图片。'}));
+    for (const a of filtered) {
+      const img = el('img', { src: '/api/assets/' + encodeURIComponent(a.id), alt: a.name || '素材', loading:'lazy' });
       const isCover = cover === a.id;
-      assets.append(el('div', { class: 'asset-row' }, img,
-        el('button', { type: 'button', class: 'quiet-btn', text: isCover ? '封面 ✓' : '设为封面', onclick: () => { cover = isCover ? '' : a.id; FP.dirty(modal); drawAssets(); } }),
-        el('code', { text: '![说明](asset:' + a.id + ')', style: 'font-size:12px;user-select:all' }),
-        el('button', { type: 'button', class: 'danger-btn', text: '删除', onclick: async () => {
+      const uses=savedUses(a), draftChanged=cover!==view.cover_asset_id || markdown.value!==view.markdown || JSON.stringify([...gallery])!==JSON.stringify(view.gallery_assets||[]);
+      const shot=el('input',{type:'checkbox',checked:gallery.has(a.id),onchange:()=>{shot.checked?gallery.add(a.id):gallery.delete(a.id);FP.dirty(modal);drawAssets();}});
+      const controls=el('div',{class:'asset-actions'},
+        el('button',{type:'button',class:'quiet-btn',text:'插入正文',onclick:()=>{markdown.setRangeText('![说明](asset:'+a.id+')',markdown.selectionStart,markdown.selectionEnd,'end');FP.dirty(modal);drawAssets();markdown.focus();}}),
+        el('button', { type: 'button', class: 'quiet-btn', text: isCover ? '取消封面' : '设为封面', onclick: () => { cover = isCover ? '' : a.id; FP.dirty(modal); drawAssets(); } }),
+        el('label',{class:'asset-check'},shot,'展示为截图'),
+        el('button', { type: 'button', class: 'danger-btn', text: '删除图片', disabled:uses.length>0||inDraft(a), title:uses.length||inDraft(a)?'先移除封面、正文与截图引用并保存，才能删除':'永久删除并释放空间', onclick: async () => {
           if(busy)return;
-          if (!confirm('立即删除这张图片？已发布页面也会受影响，关闭编辑框不会撤销。')) return;
+          if (!confirm('永久删除这张未使用的图片并释放空间？此操作无法撤销。')) return;
           busy=true;save.disabled=true;
-          try { await FP.api('/api/files/' + encodeURIComponent(item.id) + '/assets/' + encodeURIComponent(a.id), { method: 'DELETE' }); view.assets = view.assets.filter(x => x.id !== a.id); if (cover === a.id) cover = ''; drawAssets(); }
+          try { await FP.api('/api/files/' + encodeURIComponent(item.id) + '/assets/' + encodeURIComponent(a.id), { method: 'DELETE' }); view.assets = view.assets.filter(x => x.id !== a.id); if (cover === a.id) cover = ''; drawAssets();document.dispatchEvent(new Event('fp:assets')); }
           catch (e) { FP.message(e.message); } finally {busy=false;save.disabled=false;}
-        } })));
+        } }));
+      assets.append(el('article', { class: 'editor-asset', 'data-asset-id':a.id }, img,el('div',{},
+        el('strong',{text:a.name||'图片素材'}),el('p',{class:'section-sub',text:FP.format(a.size)+' · '+(uploaded.has(a.id)?'本次上传 · ':'')+(uses.length?'使用中：'+uses.join('、'):'未使用')+(draftChanged?' · 编辑未保存':'')}),controls)));
     }
   }
+  markdown.addEventListener('input',drawAssets);
   drawAssets();
 
   const picker = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', class: 'hidden', onchange: async (e) => {
     const f = e.target.files[0]; e.target.value = ''; if (!f || busy) return;busy=true;save.disabled=true;
     const form = new FormData(); form.append('image', f, f.name);
-    try { const a = await FP.api('/api/files/' + encodeURIComponent(item.id) + '/assets', { method: 'POST', body: form }); view.assets.push(a); drawAssets(); }
+    try { const a = await FP.api('/api/files/' + encodeURIComponent(item.id) + '/assets', { method: 'POST', body: form }); view.assets.push(a); uploaded.add(a.id);assetFilter='new';drawAssets();document.dispatchEvent(new Event('fp:assets'));FP.toast('图片已存入素材库，请选择使用位置'); }
     catch (err) { FP.message(err.message); } finally {busy=false;save.disabled=false;}
   } });
 
@@ -103,14 +121,15 @@ async function openShare(item) {
     el('details',{},el('summary',{text:'编辑介绍与图片（可选）'}),
     field('标题（留空使用文件名）', title), field('版本（可选）', version), field('简介', summary), field('下载按钮文字（可选）', button),
     field('文件介绍', markdown, '可以直接写普通文字。Markdown 示例：# 标题、- 列表项、**加粗文字**。'),
-    el('p',{class:'section-sub',text:'图片上传后立即保存并占用空间，关闭窗口或取消分享不会删除；取消分享后仅管理员可访问。可在下方图片列表中删除素材。其他编辑需点击保存。'}),
+    el('p',{class:'section-sub',text:'图片上传后立即保存并占用空间，关闭窗口或取消分享不会删除。选择封面、插入正文或勾选截图后，点击保存才会用于分享页。使用中按已保存引用分类；删除前请先移除引用并保存。'}),
     el('div', { class: 'modal-actions', style: 'justify-content:flex-start;margin:6px 0' },
       el('button', { type: 'button', class: 'quiet-btn', text: '预览', onclick: async () => {
         try { const r = await FP.api('/api/markdown/preview', json('POST', { file_id: item.id, markdown: markdown.value })); preview.innerHTML = r.html || '（空）'; }
         catch (e) { preview.textContent = e.message; }
       } }),
-      el('button', { type: 'button', class: 'quiet-btn', text: '上传图片', onclick: () => picker.click() }), picker),
-    preview, assets),
+      el('button', { type: 'button', class: 'quiet-btn', text: '上传图片', onclick: () => picker.click() }),
+      el('button', { type:'button',class:'quiet-btn',text:'从素材库选择',onclick:()=>{assetFilter='all';drawAssets();assetFilters.scrollIntoView({block:'nearest'});assetFilters.firstElementChild.focus();} }),picker),
+    preview,el('h3',{text:'本文件素材'}),el('p',{class:'section-sub',text:'选择下方图片即可插入。素材按所属文件管理，集中整理请进入侧栏素材库。'}),assetFilters, assets),
     el('div', { class: 'modal-actions' }, el('button', { type: 'button', class: 'quiet-btn', text: '关闭', onclick: () => closeModal() }), save));
   const body=el('div',{class:'share-dialog-body'}), footer=modal.lastElementChild;
   while(modal.firstChild!==footer)body.append(modal.firstChild);
@@ -121,20 +140,20 @@ async function openShare(item) {
     try {
       view = await FP.api('/api/files/' + encodeURIComponent(item.id) + '/share', json('PUT', {
         title: title.value, version: version.value, summary: summary.value, markdown: markdown.value, button_text: button.value,
-        cover_asset_id: cover, enabled: mode.value!=='private', featured: mode.value==='public',page_template:pageTemplate.value,relay_mode:relayMode.value,relays:[...relayChecks].filter(([,input])=>input.checked).map(([id])=>id) }));
-      FP.clean(modal); savedState(); FP.toast(view.featured ? '已公开分享并在主页展示' : view.enabled ? '已保存为私密分享，可复制链接' : '已取消分享，访客无法访问'); await FP.refreshFiles();
+        cover_asset_id: cover, gallery_assets:[...gallery], enabled: mode.value!=='private', featured: mode.value==='public',page_template:pageTemplate.value,relay_mode:relayMode.value,relays:[...relayChecks].filter(([,input])=>input.checked).map(([id])=>id) }));
+      FP.clean(modal); savedState();drawAssets();document.dispatchEvent(new Event('fp:assets')); FP.toast(view.featured ? '已公开分享并在主页展示' : view.enabled ? '已保存为私密分享，可复制链接' : '已保存，当前未分享'); await FP.refreshFiles();
     } catch (e) { status.textContent = e.message; } finally { busy = false; save.disabled = false; save.removeAttribute('aria-busy'); controls.forEach((e,i)=>e.disabled=disabled[i]);copy.disabled=!view.enabled; }
   });
   FP.watchDraft(modal);
   closeModal = FP.openDialog(modal,{canClose:()=>!busy});
-  mode.focus();
+  if(focusImages){modal.querySelector('details').open=true;assetFilters.scrollIntoView({block:'center'});assetFilters.firstElementChild.focus();}else mode.focus();
 }
 FP.openShare = openShare;
 FP.cancelShare = async item => {
   if(!confirm('取消“'+item.name+'”的分享？原分享页面与下载授权将失效，文件保留。未保存的分享设置不会提交。'))return false;
   try {
     await FP.api('/api/files/'+encodeURIComponent(item.id)+'/share',{method:'DELETE'});
-    FP.toast('已取消分享，文件保留');await FP.refreshFiles();return true;
+    FP.toast('已取消分享，文件保留');document.dispatchEvent(new Event('fp:assets'));await FP.refreshFiles();return true;
   } catch(e) {FP.message(e.message);return false;}
 };
 FP.el = el; FP.json = json; FP.field = field;

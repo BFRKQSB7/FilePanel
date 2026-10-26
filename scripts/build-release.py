@@ -38,8 +38,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--fixture', action='store_true')
     p.add_argument('--key', type=Path)
-    p.add_argument('--version', default='0.5.2')
-    p.add_argument('--sequence', type=int, default=12)
+    p.add_argument('--version', default='0.6.0')
+    p.add_argument('--sequence', type=int, default=13)
     p.add_argument('--output', type=Path, default=ROOT / 'dist/t08-release')
     a = p.parse_args()
     assert a.fixture or a.key, 'provide an existing offline key or --fixture'

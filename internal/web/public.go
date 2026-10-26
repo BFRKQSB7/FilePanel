@@ -217,7 +217,6 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	owned := s.shares.AssetOwned(sh.FileID)
-	assets, _ := s.shares.Assets(sh.FileID)
 	data := struct {
 		page
 		Slug, Name, Version, Summary, Cover, Button, FileName, SHA string
@@ -268,9 +267,9 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 	}
 	// 渲染器对全部文本转义，只产出白名单标签。
 	data.Body = template.HTML(share.RenderMarkdown(sh.Markdown, owned))
-	for _, a := range assets {
-		if a.ID != sh.CoverAsset {
-			data.Shots = append(data.Shots, a.ID)
+	for _, id := range sh.GalleryAssets {
+		if id != sh.CoverAsset && owned(id) {
+			data.Shots = append(data.Shots, id)
 		}
 	}
 	for i := range data.Lines {

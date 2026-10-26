@@ -6,10 +6,11 @@ A lightweight single-admin file hosting and publishing panel for personal VPS in
 
 ## Features and scope
 
-- Industrial archive styling with light/dark modes; private shares omit search and home navigation. File lists support click/Ctrl/Shift selection, column sorting, context menus, double-click properties, and inline F2 rename.
+- Minimal cloud-drive styling with light/dark modes; private shares omit search and home navigation. File lists support click/Ctrl/Shift selection, column sorting, context menus, double-click properties, and inline F2 rename.
 - Private-by-default uploads, streaming size/SHA-256 validation, downloads, renaming and deletion.
 - Public resource pages, opt-in home-page listings, revocable download authorization, Range requests and persistent traffic accounting/protection.
 - Link-only or listed sharing, bulk sharing controls and three download-page layouts per file.
+- Image library with usage filters, file ownership, cover/body/gallery selection and protected bulk deletion of unused images. Uploads are stored immediately; cancelling a share preserves its images and references.
 - Verified storage replicas with recoverable copy/removal jobs, independent per-file relay selection and download buttons labeled by exit region.
 - Site branding with images and colors, plus versioned ZIP export and isolated preview/confirmation before import.
 - A Chinese administration interface at `/admin`, public home page at `/` and resource pages at `/s/{slug}`.

@@ -333,7 +333,7 @@ async function main() {
   };
   for(const width of [375,768,1440,2560]) {
    await page.setViewportSize({width,height:1000});
-   for(const tab of ['files','data','tutorial']) {
+   for(const tab of ['files','assets','data','tutorial']) {
     await page.locator('[data-tab='+tab+']').click();
     if(tab==='data')await page.getByRole('heading',{name:'节点磁盘与独立用量'}).waitFor();
     await inspect(tab+' '+width);
@@ -408,7 +408,7 @@ async function main() {
 
   await page.locator('#file-rows tr').first().getByRole('button',{name:'分享',exact:true}).click();await dialog.waitFor({state:'visible'});
   await dialog.getByText('编辑介绍与图片（可选）',{exact:true}).click();
-  check(await dialog.getByText('图片上传后立即保存并占用空间，关闭窗口或取消分享不会删除；取消分享后仅管理员可访问。可在下方图片列表中删除素材。其他编辑需点击保存。',{exact:true}).isVisible(),'image storage behavior explained next to upload');
+  check(await dialog.getByText('图片上传后立即保存并占用空间，关闭窗口或取消分享不会删除。选择封面、插入正文或勾选截图后，点击保存才会用于分享页。使用中按已保存引用分类；删除前请先移除引用并保存。',{exact:true}).isVisible(),'image storage behavior explained next to upload');
   await page.keyboard.press('Escape');
   // Historical and no-transfer operations must not look unfinished or claim bytes sent.
   const taskFixtures=[
@@ -427,6 +427,50 @@ async function main() {
    check(text.includes(expected)&&!text.includes('待检查'),'storage task label: '+name);
   }
   await page.unroute('**/api/moves');
+  // Asset library: real upload, draft use, publication, revocation, and protected deletion.
+  await page.locator('[data-tab=assets]').click();
+  await page.getByRole('button',{name:'上传素材',exact:true}).click();
+  const uploadDialog=page.getByRole('dialog',{name:'上传素材'});
+  const libraryPNG=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');x.fillStyle='#4263eb';x.fillRect(0,0,320,180);x.fillStyle='white';x.font='28px sans-serif';x.fillText('FilePanel',90,105);return c.toDataURL().split(',')[1];}),'base64');
+  await uploadDialog.getByLabel('选择素材图片').setInputFiles({name:'library-smoke.png',mimeType:'image/png',buffer:libraryPNG});
+  await uploadDialog.getByRole('button',{name:'上传到素材库'}).click();
+  await uploadDialog.getByText('已上传 1 张，尚未用于分享页面。',{exact:true}).waitFor();
+  await uploadDialog.getByRole('button',{name:'关闭',exact:true}).click();
+  await page.locator('.asset-card').waitFor();
+  const assetID=await page.locator('.asset-card').getAttribute('data-asset-id');
+  check(await page.locator('.asset-card .asset-badge').innerText()==='未使用','new library upload is unused');
+  check((await fetch(base+'/a/'+assetID)).status===404,'unused asset cannot be fetched anonymously');
+  await page.getByRole('button',{name:'用于分享页面'}).click();await dialog.waitFor();
+  await dialog.getByRole('button',{name:'从素材库选择'}).click();
+  await dialog.getByRole('button',{name:'插入正文'}).click();
+  check((await dialog.getByLabel('文件介绍',{exact:true}).inputValue()).includes('asset:'+assetID),'insert image writes reference at caret');
+  await dialog.getByRole('button',{name:'预览',exact:true}).click();
+  await dialog.locator('img[src="/api/assets/'+assetID+'"]').first().waitFor();
+  await dialog.getByRole('button',{name:'设为封面'}).click();await dialog.getByLabel('展示为截图').check();
+  await dialog.getByRole('combobox',{name:'分享方式',exact:true}).selectOption('link');
+  const assetShareURL=await dialog.getByLabel('稳定分享链接').inputValue();
+  await dialog.getByRole('button',{name:'保存分享设置'}).click();
+  await dialog.getByText(/使用中：封面、正文、截图/).waitFor();
+  check(await dialog.getByRole('button',{name:'删除图片'}).isDisabled(),'saved image usage prevents deletion');
+  check((await fetch(base+'/a/'+assetID)).status===200,'saved referenced image becomes public with share');
+  await page.keyboard.press('Escape');
+  await page.locator('.asset-badge.used').waitFor();
+  for(const scheme of ['light','dark']){await page.emulateMedia({colorScheme:scheme});for(const width of [375,1440]){await page.setViewportSize({width,height:1000});await inspect('asset library '+scheme+' '+width);await page.screenshot({path:path.join(temp,'assets-'+scheme+'-'+width+'.png'),fullPage:true});}}
+  await page.setViewportSize({width:1440,height:900});await page.emulateMedia({colorScheme:'light'});
+  await page.getByRole('button',{name:'编辑使用位置'}).click();
+  await dialog.getByRole('button',{name:'取消分享',exact:true}).click();await dialog.waitFor({state:'hidden'});
+  check((await fetch(assetShareURL)).status===404&&(await fetch(base+'/a/'+assetID)).status===404,'cancel sharing revokes page and image access');
+  await page.getByRole('button',{name:'刷新素材'}).click();await page.getByText('封面、正文、截图 · 分享已关闭，引用保留',{exact:true}).waitFor();
+  check(await page.locator('.asset-card input').isDisabled(),'cancelled share retains deletion protection');
+  await page.getByRole('button',{name:'编辑使用位置'}).click();
+  await dialog.getByRole('button',{name:'取消封面'}).click();await dialog.getByLabel('展示为截图').uncheck();await dialog.getByLabel('文件介绍',{exact:true}).fill('');
+  check(await dialog.getByRole('button',{name:'删除图片'}).isDisabled(),'unsaved reference removal does not enable deletion');
+  await dialog.getByRole('button',{name:'保存分享设置'}).click();await dialog.getByRole('button',{name:'删除图片'}).waitFor();
+  await page.waitForFunction(()=>!document.querySelector('.editor-asset .danger-btn').disabled);await page.getByRole('button',{name:'保存分享设置'}).evaluate(e=>e.disabled?new Promise(resolve=>{const observer=new MutationObserver(()=>{if(!e.disabled){observer.disconnect();resolve();}});observer.observe(e,{attributes:true,attributeFilter:['disabled']});}):undefined);await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+  await page.getByLabel('素材使用状态').selectOption('unused');await page.locator('.asset-card input:not(:disabled)').waitFor();
+  await page.getByLabel('选择本页未使用图片').check();await page.getByRole('button',{name:'删除所选未使用图片'}).click();
+  await page.getByText('已删除 1 张图片。',{exact:true}).waitFor();
+  check(await page.locator('.asset-card').count()===0,'batch deletion removes unused images');
   check(errors.length===0,'no browser runtime errors: '+errors.join('; '));
   console.log(JSON.stringify({checks,artifacts:temp}));
  } finally { if(browser)await browser.close();server.kill();await new Promise(r=>{if(server.exitCode!==null)r();else server.once('exit',r);}); }

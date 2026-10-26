@@ -93,10 +93,10 @@ async function copy(text, input) {
 }
 function navigate(tab, section) {
  closeContextMenu();
- if (!['files','data','tutorial','settings'].includes(tab)) tab = 'files';
+ if (!['files','assets','data','tutorial','settings'].includes(tab)) tab = 'files';
  for (const b of document.querySelectorAll('.nav button')) { const selected = b.dataset.tab === tab; b.classList.toggle('active', selected); b.setAttribute('aria-current', selected ? 'page' : 'false'); }
- for (const id of ['files','data','tutorial','settings']) $('#page-' + id).classList.toggle('hidden', id !== tab);
- $('#crumb-current').textContent = {files:'文件',data:'用量与状态',tutorial:'使用帮助',settings:'设置'}[tab];
+ for (const id of ['files','assets','data','tutorial','settings']) $('#page-' + id).classList.toggle('hidden', id !== tab);
+ $('#crumb-current').textContent = {files:'文件',assets:'素材库',data:'用量与状态',tutorial:'使用帮助',settings:'设置'}[tab];
  if (tab === 'settings') {
   section = section || 'appearance';
   if (!['appearance','access','protection','nodes','account','maintenance'].includes(section)) section = 'appearance';
@@ -110,6 +110,9 @@ function navigate(tab, section) {
 }
 function route() { const [tab, section] = location.hash.slice(1).split('-'); navigate(tab || 'files', section); }
 window.addEventListener('popstate', route);
+const assetNav=document.createElement('button');assetNav.dataset.tab='assets';assetNav.append(icon('image'),Object.assign(document.createElement('span'),{textContent:'素材库'}));
+document.querySelector('.nav [data-tab="files"]').after(assetNav);
+const assetPage=document.createElement('div');assetPage.id='page-assets';assetPage.className='hidden';$('#page-files').after(assetPage);
 document.querySelectorAll('.nav button').forEach(b => b.addEventListener('click', () => navigate(b.dataset.tab)));
 document.querySelectorAll('[data-settings]').forEach(b => b.addEventListener('click', () => navigate('settings', b.dataset.settings)));
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { const [tab, section] = b.dataset.go.split('-'); navigate(tab, section); }));
