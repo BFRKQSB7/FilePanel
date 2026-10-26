@@ -103,13 +103,14 @@ async function openShare(item) {
     el('details',{},el('summary',{text:'编辑介绍与图片（可选）'}),
     field('标题（留空使用文件名）', title), field('版本（可选）', version), field('简介', summary), field('下载按钮文字（可选）', button),
     field('文件介绍', markdown, '可以直接写普通文字。Markdown 示例：# 标题、- 列表项、**加粗文字**。'),
+    el('p',{class:'section-sub',text:'图片上传后立即保存并占用空间，关闭窗口或取消分享不会删除；取消分享后仅管理员可访问。可在下方图片列表中删除素材。其他编辑需点击保存。'}),
     el('div', { class: 'modal-actions', style: 'justify-content:flex-start;margin:6px 0' },
       el('button', { type: 'button', class: 'quiet-btn', text: '预览', onclick: async () => {
         try { const r = await FP.api('/api/markdown/preview', json('POST', { file_id: item.id, markdown: markdown.value })); preview.innerHTML = r.html || '（空）'; }
         catch (e) { preview.textContent = e.message; }
       } }),
       el('button', { type: 'button', class: 'quiet-btn', text: '上传图片', onclick: () => picker.click() }), picker),
-    preview, assets,el('p',{text:'图片上传与删除会立即生效；其他编辑需点击保存。'})),
+    preview, assets),
     el('div', { class: 'modal-actions' }, el('button', { type: 'button', class: 'quiet-btn', text: '关闭', onclick: () => closeModal() }), save));
   const body=el('div',{class:'share-dialog-body'}), footer=modal.lastElementChild;
   while(modal.firstChild!==footer)body.append(modal.firstChild);

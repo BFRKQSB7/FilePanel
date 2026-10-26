@@ -406,6 +406,27 @@ async function main() {
    }
   }
 
+  await page.locator('#file-rows tr').first().getByRole('button',{name:'分享',exact:true}).click();await dialog.waitFor({state:'visible'});
+  await dialog.getByText('编辑介绍与图片（可选）',{exact:true}).click();
+  check(await dialog.getByText('图片上传后立即保存并占用空间，关闭窗口或取消分享不会删除；取消分享后仅管理员可访问。可在下方图片列表中删除素材。其他编辑需点击保存。',{exact:true}).isVisible(),'image storage behavior explained next to upload');
+  await page.keyboard.press('Escape');
+  // Historical and no-transfer operations must not look unfinished or claim bytes sent.
+  const taskFixtures=[
+   {id:'reuse',name:'route-reuse-fixture',kind:'move_existing',state:'done',route:'',size:610,progress:610},
+   {id:'remove',name:'route-remove-fixture',kind:'remove',state:'done',route:'',size:1024,progress:0},
+   {id:'direct',name:'route-direct-fixture',kind:'copy',state:'done',route:'direct',size:610,progress:610},
+   {id:'panel',name:'route-panel-fixture',kind:'move',state:'transferring',route:'panel',size:610,progress:128},
+   {id:'pending',name:'route-pending-fixture',kind:'move',state:'preflight',route:'',size:610,progress:0},
+   {id:'history',name:'route-history-fixture',kind:'move',state:'done',route:'',size:610,progress:610},
+   {id:'cancelled',name:'route-cancelled-fixture',kind:'move',state:'cancelled',route:'',size:610,progress:0}
+  ];
+  await page.route('**/api/moves',route=>route.fulfill({json:taskFixtures}));await page.locator('#refresh-btn').click();
+  await page.getByText('route-reuse-fixture · 移动',{exact:true}).waitFor({state:'visible'});
+  for(const [name,expected] of [['reuse','完成 · 复用已有副本（无需传输） · 文件大小 610 B'],['remove','完成 · 副本清理（无需传输） · 文件大小 1.0 KiB'],['direct','完成 · 直传 · 610 B / 610 B'],['panel','传输 · 面板中转 · 128 B / 610 B'],['pending','预检与预留 · 尚未确定传输方式'],['history','完成 · 传输方式未记录'],['cancelled','已取消 · 传输方式未记录']]){
+   const text=await page.locator('.setting-form').filter({hasText:'route-'+name+'-fixture'}).innerText();
+   check(text.includes(expected)&&!text.includes('待检查'),'storage task label: '+name);
+  }
+  await page.unroute('**/api/moves');
   check(errors.length===0,'no browser runtime errors: '+errors.join('; '));
   console.log(JSON.stringify({checks,artifacts:temp}));
  } finally { if(browser)await browser.close();server.kill();await new Promise(r=>{if(server.exitCode!==null)r();else server.once('exit',r);}); }

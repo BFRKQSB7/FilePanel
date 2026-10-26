@@ -55,8 +55,9 @@ async function load() {
   if (!tasks.length) box.append(el('p', '在文件操作中选择“移动”，可在这里查看阶段、路径与重试。'));
   for (const task of tasks) {
    const row = el('div'); row.className = 'setting-form';
-   const route = task.route === 'direct' ? '直传' : task.route === 'panel' ? '面板中转' : '待检查';
-   const progress = task.route === 'direct' && task.state === 'transferring' ? '传输中，等待目标确认字节数' : FP.format(task.progress) + ' / ' + FP.format(task.size);
+   const noTransfer = task.kind === 'move_existing' || task.kind === 'remove';
+   const route = task.kind === 'move_existing' ? '复用已有副本（无需传输）' : task.kind === 'remove' ? '副本清理（无需传输）' : task.route === 'direct' ? '直传' : task.route === 'panel' ? '面板中转' : ['done','cancelled'].includes(task.state) ? '传输方式未记录' : '尚未确定传输方式';
+   const progress = noTransfer ? '文件大小 ' + FP.format(task.size) : task.route === 'direct' && task.state === 'transferring' ? '传输中，等待目标确认字节数' : FP.format(task.progress) + ' / ' + FP.format(task.size);
    const kind=task.kind==='copy'?'复制':task.kind==='remove'?'移除副本':'移动';
    row.append(el('strong', task.name+' · '+kind), el('p', (stages[task.state] || task.state) + ' · ' + route + ' · ' + progress));
    if (task.error) row.append(el('p', task.error));
