@@ -12,7 +12,7 @@ type rgb struct{ r, g, b float64 }
 var (
 	white    = rgb{255, 255, 255}
 	black    = rgb{0, 0, 0}
-	darkCard = rgb{0x22, 0x29, 0x25} // 与 publicCSS 暗色模式的 --card 保持一致
+	darkCard = rgb{0x1a, 0x20, 0x2c} // 与 publicCSS 暗色模式的 --card 保持一致
 )
 
 func parseHex(s string) (rgb, bool) {

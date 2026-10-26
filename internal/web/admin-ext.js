@@ -39,7 +39,7 @@ async function openShare(item) {
   mode.append(new Option('不分享（仅管理员可访问）','private'),new Option('私密分享（仅凭链接访问）','link'),new Option('公开分享（在主页展示）','public'));
   mode.value = view.featured ? 'public' : view.enabled ? 'link' : 'private';
   const pageTemplate=el('select');pageTemplate.append(new Option('标准介绍','standard'),new Option('简洁下载','compact'),new Option('封面展示','showcase'));pageTemplate.value=view.page_template||'standard';
-  const sample=el('div',{'aria-hidden':'true'},el('div',{class:'sample-cover',text:'▤'}),el('strong',{text:view.title||view.file_name}),el('span',{class:'sample-download',text:'立即下载'}));
+  const sample=el('div',{'aria-hidden':'true'},el('div',{class:'sample-cover'},FP.icon('file-text')),el('strong',{text:view.title||view.file_name}),el('span',{class:'sample-download',text:'立即下载'}));
   const drawTemplate=()=>{sample.className='template-sample template-'+pageTemplate.value;};pageTemplate.addEventListener('change',drawTemplate);drawTemplate();
   const relayMode=el('select');relayMode.append(new Option('使用所有已启用的下载出口','all'),new Option('手动指定下载 / 中转服务器','selected'));relayMode.value=view.relay_mode||'all';
   const relayChoices=el('div',{class:'relay-choices'}),relayChecks=new Map();
@@ -92,7 +92,7 @@ async function openShare(item) {
   }});
   function savedState() { copy.disabled = !view.enabled; visit.hidden = !view.enabled; cancel.hidden = !view.enabled; status.textContent = view.featured ? '当前为公开分享：公开主页展示，访客也可通过链接访问。' : view.enabled ? '当前为私密分享：仅凭链接访问下载页面，不在公开主页展示。拥有链接的人无需登录。' : '当前未分享：只有管理员能访问。选择分享方式并保存后，链接才会生效。'; }
   savedState();
-  const modal = el('dialog', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '分享设置' },
+  const modal = el('dialog', { class: 'modal share-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '分享设置' },
     el('h2', { text: '分享与展示 · ' + view.file_name }),
     el('p',{text:'选择分享方式并保存。标题、版本、介绍和图片全部可选。'}),
     field('分享方式', mode, '私密分享不在公开主页展示；公开分享会在主页展示。选择“不分享”并保存，也可取消现有分享。'),
@@ -111,6 +111,9 @@ async function openShare(item) {
       el('button', { type: 'button', class: 'quiet-btn', text: '上传图片', onclick: () => picker.click() }), picker),
     preview, assets,el('p',{text:'图片上传与删除会立即生效；其他编辑需点击保存。'})),
     el('div', { class: 'modal-actions' }, el('button', { type: 'button', class: 'quiet-btn', text: '关闭', onclick: () => closeModal() }), save));
+  const body=el('div',{class:'share-dialog-body'}), footer=modal.lastElementChild;
+  while(modal.firstChild!==footer)body.append(modal.firstChild);
+  modal.prepend(body);
   save.addEventListener('click', async () => {
     if (busy) return; busy = true; save.disabled = true; save.setAttribute('aria-busy','true');
     const controls=[...modal.querySelectorAll('input,textarea,select,button')].filter(e=>e!==save);const disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);

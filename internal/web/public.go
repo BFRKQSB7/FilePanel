@@ -20,13 +20,13 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 	"add":  func(a, b int) int { return a + b },
 }).Parse(`
 {{define "head"}}<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="referrer" content="no-referrer"><title>{{.Title}}</title>{{if .Canonical}}<link rel="canonical" href="{{.Canonical}}">{{end}}<style>{{.CSS}}</style></head><body>
-<header class="top"><div class="top-in">{{if .HideNavigation}}<div class="brand">{{template "brand" .}}</div><span class="access-label">链接访问 / FILE ACCESS</span>{{else}}<a class="brand" href="{{.Base}}/">{{template "brand" .}}</a><form class="search" action="{{.Base}}/" method="get" role="search"><input name="q" value="{{.Query}}" placeholder="搜索资源" aria-label="搜索资源" maxlength="80"><button class="btn" type="submit">搜索</button></form>{{end}}</div></header><main class="wrap">{{end}}
+<header class="top"><div class="top-in">{{if .HideNavigation}}<div class="brand">{{template "brand" .}}</div><span class="access-label">仅凭链接访问</span>{{else}}<a class="brand" href="{{.Base}}/">{{template "brand" .}}</a><form class="search" action="{{.Base}}/" method="get" role="search"><input name="q" value="{{.Query}}" placeholder="搜索资源" aria-label="搜索资源" maxlength="80"><button class="btn" type="submit">搜索</button></form>{{end}}</div></header><main class="wrap">{{end}}
 {{define "brand"}}{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{else}}<span class="mark">{{.Mark}}</span>{{end}}{{.Brand}}{{end}}
 {{define "foot"}}</main><footer class="foot">{{.Footer}}</footer></body></html>{{end}}
 {{define "home"}}{{template "head" .}}
-<section class="hero"><span class="overline">FILE ARCHIVE / 公开资源</span><h1>资源下载</h1><p>{{.Intro}}</p><span class="hero-index" aria-hidden="true">01 /</span></section>
+<section class="hero"><span class="overline">SHARED WITH YOU / 与你分享</span><h1>资源下载</h1><p>{{.Intro}}</p></section>
 {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
-{{if .Items}}<div class="grid">{{range .Items}}<a class="card" href="{{$.Base}}/s/{{.Slug}}"><div class="cover">{{if .Cover}}<img src="/a/{{.Cover}}" alt="" loading="lazy">{{else}}▤{{end}}</div><div class="card-body"><h2>{{.Name}}</h2>{{if .Summary}}<p>{{.Summary}}</p>{{end}}<div class="meta">{{if .Version}}<span class="tag">{{.Version}}</span>{{end}}<span>{{size .Size}}</span></div></div></a>{{end}}</div>
+{{if .Items}}<div class="grid">{{range .Items}}<a class="card" href="{{$.Base}}/s/{{.Slug}}"><div class="cover">{{if .Cover}}<img src="/a/{{.Cover}}" alt="" loading="lazy">{{else}}<svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#file-text"></use></svg>{{end}}</div><div class="card-body"><h2>{{.Name}}</h2>{{if .Summary}}<p>{{.Summary}}</p>{{end}}<div class="meta">{{if .Version}}<span class="tag">{{.Version}}</span>{{end}}<span>{{size .Size}}</span></div></div></a>{{end}}</div>
 {{if or .Prev .Next}}<nav class="pager" aria-label="分页">{{if .Prev}}<a class="btn ghost" href="{{.Prev}}">上一页</a>{{end}}<span>第 {{.Page}} / {{.Pages}} 页</span>{{if .Next}}<a class="btn ghost" href="{{.Next}}">下一页</a>{{end}}</nav>{{end}}
 {{else if .Query}}<div class="empty"><strong>没有找到匹配的资源</strong>换个关键词试试，或 <a href="{{.Base}}/">查看全部资源</a>。</div>
 {{else}}<div class="empty"><strong>这里还没有公开资源</strong>管理员发布资源后会显示在这里。</div>{{end}}
@@ -34,9 +34,9 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 {{define "share"}}{{template "head" .}}
 <article class="article share-layout layout-{{.PageTemplate}}"><div class="share-head"><div class="share-heading"><div class="overline">FILE / 文件下载</div><h1>{{.Name}}</h1><p class="sub">{{if .Version}}版本 {{.Version}} · {{end}}{{size .Size}}</p>
 {{if .Summary}}<p>{{.Summary}}</p>{{end}}</div>
-{{if or .Cover (eq .PageTemplate "showcase")}}<div class="banner">{{if .Cover}}<img src="/a/{{.Cover}}" alt="{{.Name}} 封面">{{else}}<span class="cover-placeholder" aria-hidden="true">▤</span>{{end}}</div>{{end}}</div>
+{{if or .Cover (eq .PageTemplate "showcase")}}<div class="banner">{{if .Cover}}<img src="/a/{{.Cover}}" alt="{{.Name}} 封面">{{else}}<span class="cover-placeholder" aria-hidden="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#file-text"></use></svg></span>{{end}}</div>{{end}}</div>
 {{if .Notice}}<div class="notice {{if .NoticeErr}}err{{end}}" role="status">{{.Notice}}</div>{{end}}
-<div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get?relay={{.DefaultRelay}}" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div>
+<div class="dl"><a class="btn big" href="{{.Base}}/s/{{.Slug}}/get?relay={{.DefaultRelay}}" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#download"></use></svg>{{.Button}}</a><div>{{.FileName}}<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div>
 {{if .Lines}}<section class="regional-downloads" aria-label="按地区选择下载出口"><h2>选择下载地区</h2><div>{{range .Lines}}<a class="btn ghost" href="{{$.Base}}/s/{{$.Slug}}/get?relay={{.ID}}" {{if not .CanDownload}}aria-disabled="true" tabindex="-1"{{end}}>{{.Label}} · 下载</a>{{end}}</div><p class="sub">地区表示实际下载出口；文件可能由该服务器保存，也可能从其他存储位置中转。</p></section>{{end}}
 {{if .Shots}}<div class="shots">{{range .Shots}}<img src="/a/{{.}}" alt="截图" loading="lazy">{{end}}</div>{{end}}
 {{if .Body}}<div class="md">{{.Body}}</div>{{end}}
@@ -44,8 +44,8 @@ var publicTemplates = template.Must(template.New("public").Funcs(template.FuncMa
 {{template "foot" .}}{{end}}
 {{define "preview"}}{{template "head" .}}
 <section class="hero"><h1>资源下载</h1><p>{{.Intro}}</p></section>
-<div class="grid"><a class="card" href="#"><div class="cover">▤</div><div class="card-body"><h2>示例资源</h2><p>这是预览用的示例卡片，不会出现在公开主页。</p><div class="meta"><span class="tag">1.0.0</span><span>12.3 MB</span></div></div></a></div>
-<article class="article"><h1>示例资源</h1><p class="sub">版本 1.0.0 · 12.3 MB</p><div class="dl"><a class="btn big" href="#">{{.Button}}</a><div>example.bin<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div></article>
+<div class="grid"><a class="card" href="#"><div class="cover"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#file-text"></use></svg></div><div class="card-body"><h2>示例资源</h2><p>这是预览用的示例卡片，不会出现在公开主页。</p><div class="meta"><span class="tag">1.0.0</span><span>12.3 MB</span></div></div></a></div>
+<article class="article"><h1>示例资源</h1><p class="sub">版本 1.0.0 · 12.3 MB</p><div class="dl"><a class="btn big" href="#"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#download"></use></svg>{{.Button}}</a><div>example.bin<small>支持断点续传 · 点击后生成的下载地址 5 分钟内有效；分享页不因此过期</small></div></div></article>
 {{template "foot" .}}{{end}}
 {{define "error"}}{{template "head" .}}
 <div class="empty" role="alert"><strong>{{.Heading}}</strong>{{.Message}}<p>{{if .Retry}}<a class="btn" href="{{.Retry}}">{{.RetryText}}</a> {{end}}{{if .Back}}<a class="btn ghost" href="{{.Back}}">返回</a>{{end}}</p></div>

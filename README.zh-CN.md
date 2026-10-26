@@ -94,7 +94,7 @@ go build ./...
 
 ## 致谢
 
-视觉方向参考 [MeowVPS Blog](https://meowvps.com/blog/)，用户提供的参考图保留在 `docs/assets/` 供设计讨论，相关品牌与插画归原权利人所有。FilePanel 使用 Go、[modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) 和 Go `x/crypto`、`x/sys` 库。
+当前界面采用现代极简网盘布局，内置适配后的 [Basecoat](https://basecoatui.com/) 组件和 [Lucide](https://lucide.dev/) 图标，来源与许可证见[组件说明](internal/web/vendor/README.md)。历史参考图保留在 `docs/assets/` 供设计讨论，相关品牌与插画归原权利人所有。FilePanel 使用 Go、[modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) 和 Go `x/crypto`、`x/sys` 库。
 
 ## 使用说明
 

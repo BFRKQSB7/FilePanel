@@ -28,6 +28,10 @@ async function main() {
   const page = await context.newPage(); const errors=[];page.on('pageerror',e=>errors.push(e.message));
   page.setDefaultTimeout(8000);
   await page.goto(base+'/admin');
+  for(const [asset,type] of [['/icons.svg','image/svg+xml'],['/components.css','text/css']]) {
+   const response=await context.request.get(base+asset);
+   check(response.ok()&&response.headers()['content-type'].includes(type),'embedded asset served: '+asset);
+  }
   await page.locator('#init-form').waitFor({state:'visible'});
   await page.screenshot({path:path.join(temp,'initialization.png'),fullPage:true,animations:'disabled'});
   for(const width of [375,768,1440,2560]) {
@@ -57,6 +61,28 @@ async function main() {
   await page.locator('#search').fill('no-match');
   check((await page.locator('#empty-title').textContent()).includes('没有找到匹配'),'search empty state differs from empty storage');
   await page.locator('#clear-search').click();check(await page.locator('#file-rows tr').count()===4,'clear search restores files');
+  await page.getByRole('button',{name:'网格视图',exact:true}).click();
+  check(await page.locator('#file-view').evaluate(e=>e.classList.contains('is-grid')),'grid view activated');
+  await page.reload();await page.locator('#app').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelectorAll('#file-rows tr').length===4);
+  check(await page.getByRole('button',{name:'网格视图',exact:true}).getAttribute('aria-pressed')==='true','view preference survives reload');
+  for(const width of [375,768,1440,2560]) {
+   await page.setViewportSize({width,height:900});
+   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'grid fits '+width);
+  }
+  await page.setViewportSize({width:1440,height:900});
+  await page.locator('#file-rows tr').first().locator('.file-name').click();await page.keyboard.press('ArrowRight');
+  check(await page.locator('#file-rows tr').nth(1).getAttribute('aria-selected')==='true','grid right arrow selects adjacent file');
+  await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');
+  const columns=await page.locator('#file-rows').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length);
+  check(await page.locator('#file-rows tr').nth(Math.min(3,columns)).getAttribute('aria-selected')==='true','grid down arrow moves one visual row');
+  await page.keyboard.press('/');check(await page.locator('#search').evaluate(e=>e===document.activeElement),'slash focuses file search');
+  await page.getByRole('button',{name:'文档',exact:true}).click();check(await page.locator('#file-rows tr').count()===4,'document filter keeps text files');
+  await page.locator('#search').fill('drop-');check(await page.locator('#file-rows tr').count()===2,'file type combines with name search');
+  await page.getByLabel('分享状态',{exact:true}).selectOption('shared');check(await page.locator('#empty').isVisible(),'share state combines with type and search');
+  await page.locator('#clear-search').click();
+  check(await page.locator('#file-rows tr').count()===4&&await page.getByRole('button',{name:'全部文件',exact:true}).getAttribute('aria-pressed')==='true','clear filters resets all dimensions');
+  await page.getByRole('button',{name:'图片',exact:true}).click();check(await page.locator('#empty').isVisible(),'empty category has recovery action');
+  await page.locator('#clear-search').click();await page.getByRole('button',{name:'列表视图',exact:true}).click();
   const rows=page.locator('#file-rows tr');
   await rows.nth(0).locator('.file-name').click();
   check(await page.locator('#file-rows tr.selected').count()===1,'click selects unshared files');
@@ -138,7 +164,7 @@ async function main() {
   await page.getByRole('combobox',{name:'分享方式',exact:true}).selectOption('link');await page.getByRole('button',{name:'保存分享设置'}).click();
   await page.waitForFunction(()=>document.querySelector('#stat-access').textContent.includes('2 个分享')&&!document.querySelector('dialog .primary-btn').disabled);await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
   await page.getByLabel('分享状态',{exact:true}).selectOption('shared');check(await page.locator('#file-rows tr').count()===2,'shared filter excludes unshared files');
-  for(const [id,label] of [['batch-link','私密分享 · 仅链接'],['batch-public','公开分享 · 主页展示']]){
+  for(const [id,label] of [['batch-link','私密分享'],['batch-public','公开分享']]){
    await page.locator('#select-shared').check();page.once('dialog',d=>d.accept());await page.locator('#'+id).click();
    await page.waitForFunction(label=>document.querySelectorAll('#file-rows tr').length===2&&[...document.querySelectorAll('#file-rows .badge')].every(x=>x.textContent===label)&&!document.querySelector('#file-rows').inert,label);
    check(true,'batch mode: '+label);
@@ -295,7 +321,6 @@ async function main() {
      if(!e.labels.length && !e.getAttribute('aria-label'))bad.push('unlabelled select');
     }
     for(const e of document.querySelectorAll('button,a.quiet-btn,a.ghost-btn,input:not([type=checkbox]):not([type=radio]),select,summary'))if(visible(e) && e.getBoundingClientRect().height<43)bad.push('small target: '+(e.id||e.textContent.slice(0,30)));
-    for(const e of document.querySelectorAll('*'))if(visible(e)&&e!==document.body&&getComputedStyle(e).backgroundImage.includes('gradient('))bad.push('gradient: '+e.className);
     return bad;
    });
    check(problems.length===0,name+': '+(problems.join('; ')||'controls, labels and layout'));
@@ -321,6 +346,7 @@ async function main() {
    await page.locator('[data-tab=files]').click();
    await page.getByRole('button',{name:'分享',exact:true}).first().click();await dialog.waitFor({state:'visible'});
    await dialog.locator('summary').click();await inspect('share dialog '+width);
+   check(await page.getByRole('button',{name:'保存分享设置'}).evaluate(e=>{const r=e.getBoundingClientRect(),d=e.closest('dialog').getBoundingClientRect();return r.top>=d.top&&r.bottom<=d.bottom&&r.bottom<=innerHeight;}),'share save remains visible '+width);
    await page.screenshot({path:path.join(temp,'dialog-'+width+'.png'),fullPage:false,animations:'disabled'});await page.keyboard.press('Escape');
    await more.click();await page.getByRole('button',{name:'移动',exact:true}).first().click();
    await page.getByRole('dialog',{name:'移动文件'}).waitFor();await inspect('move dialog '+width);await page.keyboard.press('Escape');
@@ -351,6 +377,28 @@ async function main() {
    }
   }
   await publicPage.close();
+
+  await page.locator('[data-tab=files]').click();await page.getByLabel('分享状态',{exact:true}).selectOption('all');
+  const beforeTypes=await page.locator('#file-rows tr').count();
+  const typeNames=['preview-photo.PNG','preview-archive.tar.gz','preview-audio.mp3','png','preview.blob'];
+  await page.locator('#file-picker').setInputFiles(typeNames.map(name=>({name,mimeType:'application/octet-stream',buffer:Buffer.from('Extension classification fixture')})));
+  await page.waitForFunction(count=>Number(document.querySelector('#stat-count').textContent)===count,beforeTypes+typeNames.length);
+  for(const [kind,name] of [['图片','preview-photo.PNG'],['压缩包','preview-archive.tar.gz'],['影音','preview-audio.mp3']]) {
+   await page.getByRole('button',{name:kind,exact:true}).click();
+   const matching=await page.locator('#file-rows .file-name').allTextContents();
+   check(matching.length===(kind==='压缩包'?2:1)&&matching.includes(name),'extension filter: '+kind);
+  }
+  await page.getByRole('button',{name:'其他',exact:true}).click();
+  const others=await page.locator('#file-rows .file-name').allTextContents();
+  check(others.includes('png')&&others.includes('preview.blob'),'extensionless and unknown files remain in other');
+  await page.getByRole('button',{name:'全部文件',exact:true}).click();await page.getByRole('button',{name:'网格视图',exact:true}).click();
+  for(const scheme of ['light','dark']) {
+   await page.emulateMedia({colorScheme:scheme});
+   for(const width of [375,1440]) {
+    await page.setViewportSize({width,height:1000});await inspect('grid '+scheme+' '+width);
+    await page.screenshot({path:path.join(temp,'grid-'+scheme+'-'+width+'.png'),fullPage:true,animations:'disabled'});
+   }
+  }
 
   check(errors.length===0,'no browser runtime errors: '+errors.join('; '));
   console.log(JSON.stringify({checks,artifacts:temp}));

@@ -94,7 +94,7 @@ No open-source license has been selected. All rights are reserved; see [LICENSE]
 
 ## Acknowledgments
 
-The visual direction references [MeowVPS Blog](https://meowvps.com/blog/); the supplied reference image is retained under `docs/assets/` for design discussion. Referenced branding and artwork belong to their respective owners. FilePanel uses Go, [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), and the Go `x/crypto` and `x/sys` packages.
+The current interface uses a minimal cloud-drive layout with adapted [Basecoat](https://basecoatui.com/) components and [Lucide](https://lucide.dev/) icons, bundled locally. See [component provenance and licenses](internal/web/vendor/README.md). Historical reference images under `docs/assets/` remain for design discussion; referenced branding and artwork belong to their respective owners. FilePanel uses Go, [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), and the Go `x/crypto` and `x/sys` packages.
 
 ## Responsible use
 

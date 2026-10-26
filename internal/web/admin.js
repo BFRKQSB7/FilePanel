@@ -6,6 +6,34 @@ const queue = [];
 const selectedFiles = new Set();
 let batchBusy=false;
 let visibleFiles=[], anchorID='', focusedID='', contextMenu=null, sortKey='created_at', sortDirection=-1;
+let fileKind = 'all';
+function icon(name) {
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'), use=document.createElementNS(svg.namespaceURI,'use');
+ svg.classList.add('ui-icon'); svg.setAttribute('aria-hidden','true'); use.setAttribute('href','/icons.svg#'+name); svg.append(use); return svg;
+}
+function kindOf(name) {
+ const dot=name.lastIndexOf('.');if(dot<=0)return 'other';
+ const ext=name.slice(dot+1).toLowerCase();
+ if(['png','jpg','jpeg','webp','gif','svg','avif','heic','bmp','tif','tiff'].includes(ext))return 'image';
+ if(['pdf','txt','md','doc','docx','xls','xlsx','ppt','pptx','csv','odt','epub','json'].includes(ext))return 'document';
+ if(['mp4','mkv','mov','avi','webm','mp3','wav','flac','ogg','m4a','aac'].includes(ext))return 'media';
+ if(['zip','7z','rar','gz','tar','bz2','xz','tgz'].includes(ext))return 'archive';
+ return 'other';
+}
+function setView(view) {
+ const grid=view==='grid'; $('#file-view').classList.toggle('is-grid',grid);
+ document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String((b.dataset.view==='grid')===grid)));
+ try { localStorage.setItem('fp-file-view',grid?'grid':'list'); } catch {}
+ closeContextMenu();
+}
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
+try { setView(localStorage.getItem('fp-file-view')); } catch {}
+document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{
+ fileKind=b.dataset.kind; selectedFiles.clear(); renderRows();
+}));
+document.addEventListener('keydown',e=>{
+ if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!activeDialog&&!$('#page-files').classList.contains('hidden')&&!$('#app').classList.contains('hidden')&&!e.target.closest('input,textarea,select,[contenteditable=true]')){e.preventDefault();$('#search').focus();}
+});
 const format = n => { if (n < 1024) return n + ' B'; const u = ['KiB','MiB','GiB','TiB']; let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1); return n.toFixed(1) + ' ' + u[i]; };
 const date = t => new Date(t * 1000).toLocaleString('zh-CN');
 const node = (tag, text, cls) => { const e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; };
@@ -110,6 +138,7 @@ async function refreshFiles() {
   for(const id of selectedFiles)if(!items.some(x=>x.id===id))selectedFiles.delete(id);
   renderRows();
   $('#stat-count').textContent = items.length; $('#stat-size').textContent = format(items.reduce((s,x) => s + x.size, 0));
+  $('#nav-file-count').textContent = items.length;
   const shared = items.filter(x => x.shared).length;
   $('#stat-access').textContent = shared ? shared + ' 个分享 · ' + (items.length - shared) + ' 个未分享' : '全部未分享';
   $('#file-status').textContent = '更新于 ' + new Date().toLocaleTimeString();
@@ -131,14 +160,17 @@ function renderRows() {
  const previousFocus=document.activeElement?.dataset.focusKey;
  closeContextMenu();
  const q = $('#search').value.trim().toLocaleLowerCase(), mode=$('#share-filter').value;
- const filtered = items.filter(x => x.name.toLocaleLowerCase().includes(q) && (mode==='all'||mode==='shared'&&x.shared||mode==='link'&&x.shared&&!x.featured||mode==='public'&&x.featured||mode==='private'&&!x.shared));
+ const filtered = items.filter(x => (fileKind==='all'||kindOf(x.name)===fileKind) && x.name.toLocaleLowerCase().includes(q) && (mode==='all'||mode==='shared'&&x.shared||mode==='link'&&x.shared&&!x.featured||mode==='public'&&x.featured||mode==='private'&&!x.shared));
+ const hasFilter=!!q||mode!=='all'||fileKind!=='all';
+ $('#visible-count').textContent=hasFilter?'找到 '+filtered.length+' 个文件 · 共 '+items.length+' 个':items.length+' 个文件，井然有序';
+ document.querySelectorAll('[data-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.kind===fileKind)));
  filtered.sort((a,b)=>sortDirection*(sortKey==='name'?a.name.localeCompare(b.name,'zh-CN',{numeric:true}):a[sortKey]-b[sortKey])||a.id.localeCompare(b.id));
  visibleFiles=filtered;
  if(!filtered.some(x=>x.id===focusedID))focusedID=filtered[0]?.id||'';
  $('#file-rows').replaceChildren(); $('#empty').classList.toggle('hidden', filtered.length !== 0);
- $('#empty-title').textContent = q||mode!=='all' ? '没有找到匹配的文件' : '这里还没有文件';
- $('#empty-hint').textContent = q||mode!=='all' ? '试试其他关键词或分享状态，或清除筛选查看全部文件。' : '上传后默认只有你能访问，需要时再开启分享。';
- $('#clear-search').classList.toggle('hidden', !q&&mode==='all');
+ $('#empty-title').textContent = hasFilter ? '没有找到匹配的文件' : '把重要的文件放在这里';
+ $('#empty-hint').textContent = hasFilter ? '试试其他关键词、文件类型或分享状态。' : '上传后默认只有你能访问，需要时再开启分享。';
+ $('#clear-search').classList.toggle('hidden', !hasFilter);
  const eligible=filtered,all=$('#select-shared');
  all.disabled=batchBusy||!eligible.length;all.checked=!!eligible.length&&eligible.every(x=>selectedFiles.has(x.id));all.indeterminate=!all.checked&&eligible.some(x=>selectedFiles.has(x.id));
  all.onchange=()=>{if(all.checked&&eligible.length>500){all.checked=false;message('每批最多选择 500 个文件，请先筛选范围。');return;}for(const item of eligible){if(all.checked)selectedFiles.add(item.id);else selectedFiles.delete(item.id);}renderRows();};
@@ -159,10 +191,12 @@ function renderRows() {
   tr.addEventListener('keydown',e=>fileKey(e,item));
   const name = node('div', item.name, 'file-name');
   const info = node('div', item.storage_node ? '远端存储' : '本机存储', 'file-meta');
-  info.append(node('span', item.featured ? '公开分享 · 主页展示' : item.shared ? '私密分享 · 仅链接' : '未分享', 'badge' + (item.shared ? ' shared' : '')));
+  info.append(node('span', item.featured ? '公开分享' : item.shared ? '私密分享' : '未分享', 'badge' + (item.shared ? ' shared' : '')));
   const select=node('input');select.type='checkbox';select.checked=selectedFiles.has(item.id);select.disabled=batchBusy;select.setAttribute('aria-label','选择文件：'+item.name);select.dataset.focusKey='check-'+item.id;
   select.addEventListener('click',e=>{e.stopPropagation();selectFile(item,{ctrlKey:true,shiftKey:e.shiftKey});});
-  meta.append(name, info); cell.append(select,node('div','▤','file-icon'), meta); td.append(cell);
+  const kind=kindOf(item.name), symbol=node('div','','file-icon'); symbol.dataset.kind=kind;
+  symbol.append(icon({image:'image',document:'file-text',archive:'file-archive',media:'file-video-camera',other:'file'}[kind]));
+  meta.append(name, info); cell.append(select,symbol,meta); td.append(cell);
   const size = node('td', format(item.size), 'file-size'), created = node('td',date(item.created_at),'hide-mobile');
   const actions = node('td'), wrap = node('div','','row-actions'); actions.className = 'file-actions';
   const download = node('a','下载','ghost-btn'); download.href = '/api/files/' + encodeURIComponent(item.id); download.download = item.name;
@@ -213,8 +247,10 @@ function syncSelection() {
 function fileKey(e,item) {
  if(e.target!==e.currentTarget||batchBusy)return;
  const i=visibleFiles.findIndex(x=>x.id===item.id);
- if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)) {
-  e.preventDefault();const next=visibleFiles[e.key==='Home'?0:e.key==='End'?visibleFiles.length-1:Math.max(0,Math.min(visibleFiles.length-1,i+(e.key==='ArrowDown'?1:-1)))];
+ if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)||$('#file-view').classList.contains('is-grid')&&['ArrowLeft','ArrowRight'].includes(e.key)) {
+  const grid=$('#file-view').classList.contains('is-grid'), columns=grid?Math.max(1,getComputedStyle($('#file-rows')).gridTemplateColumns.split(' ').length):1;
+  const delta={ArrowDown:columns,ArrowUp:-columns,ArrowRight:1,ArrowLeft:-1}[e.key]||0;
+  e.preventDefault();const next=visibleFiles[e.key==='Home'?0:e.key==='End'?visibleFiles.length-1:Math.max(0,Math.min(visibleFiles.length-1,i+delta))];
   if(e.ctrlKey&&!e.shiftKey)focusFile(next.id);else selectFile(next,e);
   document.activeElement?.scrollIntoView({block:'nearest'});
  } else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='a') {e.preventDefault();if(visibleFiles.length>500){message('每批最多选择 500 个文件，请先筛选范围。');return;}for(const x of visibleFiles)selectedFiles.add(x.id);syncSelection();}
@@ -307,7 +343,7 @@ async function drainQueue() {
   }
  } finally { uploading = false; $('#progress').classList.add('hidden'); $('#upload-status').textContent = '队列处理完毕，请查看每个文件的结果。'; await Promise.all([refreshFiles(),refreshData()]); }
 }
-$('#clear-search').addEventListener('click', () => { $('#search').value = '';$('#share-filter').value='all';selectedFiles.clear(); renderRows(); $('#search').focus(); });
+$('#clear-search').addEventListener('click', () => { $('#search').value = '';$('#share-filter').value='all';fileKind='all';selectedFiles.clear(); renderRows(); $('#search').focus(); });
 $('#search').addEventListener('input',()=>{selectedFiles.clear();renderRows();});
 $('#share-filter').addEventListener('change',()=>{selectedFiles.clear();renderRows();});
 $('#clear-selection').addEventListener('click',()=>{selectedFiles.clear();renderRows();});
@@ -336,6 +372,6 @@ formSubmit('#login-form',async () => { const r = await api('/api/login',json({pa
 $('#logout-btn').addEventListener('click',async () => { if ((hasDraft() || uploading) && !confirm('有未保存的修改或上传任务，仍要退出登录？')) return; try { await api('/api/logout',{method:'POST'}); showAuth(); } catch(e) { message(e.message); } });
 formSubmit('#password-form',async () => { await api('/api/password',json({current:$('#current-password').value,next:$('#next-password').value})); $('#password-form').reset(); showAuth(); message('密码已更新，请使用新密码登录。',false); });
 watchDraft($('#password-form'));
-window.FP = {api,toast,message,format,date,refreshFiles,refreshData,renderRows,navigate,dirty,clean,watchDraft,hasDraft,openDialog,copy,csrf:() => csrf};
+window.FP = {api,toast,message,format,date,icon,refreshFiles,refreshData,renderRows,navigate,dirty,clean,watchDraft,hasDraft,openDialog,copy,csrf:() => csrf};
 document.addEventListener('DOMContentLoaded',boot,{once:true});
 })();
