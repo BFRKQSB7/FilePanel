@@ -201,14 +201,15 @@ function renderRows() {
   const actions = node('td'), wrap = node('div','','row-actions'); actions.className = 'file-actions';
   const download = node('a','下载','ghost-btn'); download.href = '/api/files/' + encodeURIComponent(item.id); download.download = item.name;
   const shareButton=action('分享',()=>window.FP.openShare(item));shareButton.dataset.focusKey='share-'+item.id;wrap.append(download,shareButton);
-  if(item.shared)wrap.append(action('取消分享',()=>window.FP.cancelShare(item),'danger-btn'));
   const more = node('details'), summary = node('summary','更多'); summary.setAttribute('aria-label', '更多操作：' + item.name); more.append(summary);
   more.addEventListener('keydown', e => { if (e.key === 'Escape') { more.open = false; summary.focus(); e.stopPropagation(); } });
   const list = node('div','','more-actions');
   list.append(action('存储与副本',()=>{more.open=false;window.FP.openStorage(item);}));
   if (item.storage_node || window.FP.hasStorageNodes) list.append(action('移动', () => { more.open = false; window.FP.openMove(item); }));
   list.append(action('重命名', () => rename(item)), action('删除', () => remove(item),'danger-btn'),action('属性',()=>openProperties(item)));
-  const hash = node('small','文件校验码（SHA-256，用于核对完整性）：' + item.sha256); list.append(hash); more.append(list); wrap.append(more); actions.append(wrap); tr.append(td,size,created,actions); $('#file-rows').append(tr);
+  const hash = node('small','文件校验码（SHA-256，用于核对完整性）：' + item.sha256); list.append(hash); more.append(list); wrap.append(more);
+  if(item.shared)wrap.append(action('取消分享',()=>window.FP.cancelShare(item),'danger-btn'));
+  actions.append(wrap); tr.append(td,size,created,actions); $('#file-rows').append(tr);
  }
  if(previousFocus)document.querySelector('[data-focus-key="'+CSS.escape(previousFocus)+'"]')?.focus({preventScroll:true});
 }

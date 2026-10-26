@@ -313,6 +313,12 @@ async function main() {
    const problems=await page.evaluate(()=>{
     const visible=e=>e.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
     const bad=[];
+    for(const row of document.querySelectorAll('#file-rows tr'))if(visible(row)){
+     const actions=[...row.querySelectorAll('.row-actions > a,.row-actions > button,.row-actions > details > summary')].slice(0,3);
+     const boxes=actions.map(e=>e.getBoundingClientRect()),texts=actions.map(e=>{const r=document.createRange();r.selectNodeContents(e);return r.getBoundingClientRect();});
+     if(actions.length!==3||Math.max(...boxes.map(r=>r.top))-Math.min(...boxes.map(r=>r.top))>1||Math.max(...texts.map(r=>r.top))-Math.min(...texts.map(r=>r.top))>1)bad.push('file action text alignment');
+     if(actions.map(e=>e.textContent).join('|')!=='下载|分享|更多')bad.push('inconsistent primary action order');
+    }
     if(document.documentElement.scrollWidth>innerWidth)bad.push('page overflow');
     for(const e of document.querySelectorAll('[hidden],.hidden'))if(visible(e))bad.push('hidden control is visible: '+(e.id||e.tagName));
     for(const e of document.querySelectorAll('select'))if(visible(e)){
