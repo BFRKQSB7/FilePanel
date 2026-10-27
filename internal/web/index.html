@@ -102,7 +102,6 @@ sudo ss -lntp</code></pre>
     <p>执行 <code>sudo caddy validate --config /etc/caddy/Caddyfile</code>，通过后执行 <code>sudo systemctl reload caddy</code>；如果服务未运行，先用 <code>sudo systemctl start caddy</code>。使用 <code>sudo systemctl status caddy</code> 查看状态。Caddy 会尝试为真实域名申请并续期证书；失败时检查 DNS、端口、时间和日志 <code>sudo journalctl -u caddy -n 50 --no-pager</code>。不要关闭证书校验。</p>
     <ol start="5">
      <li><strong>先检查节点 HTTPS。</strong>在主面板所在服务器上运行 <code>curl -Iv https://node.example.com</code>，替换为真实域名；确认 TLS 证书受信任且主机名匹配。节点尚未安装时返回 502 可以是代理已连接但后端未启动，不能据此认定节点已可用。此处超时、证书错误或访问到别的网站时先检查解析、端口和代理。</li>
-     <li><strong>检查安装包。</strong>生成命令会从项目 GitHub Releases 下载与当前面板版本相同的安装脚本和签名包。如果该版本尚未发布，下载会失败，不能直接使用此在线命令；需要先由维护者提供并验证对应版本的发布包。不要用其他版本的脚本冒充，也不要跳过签名校验。</li>
      <li><strong>生成并修改命令。</strong>在主面板打开“设置 → 节点与线路 → 添加额外服务器（高级）”。“节点连接的面板 HTTPS 地址”填主面板的外网地址（例如 <code>https://files.example.com</code>，不带 <code>/admin</code>）；公网可信证书的 CA 留空。点击“生成一次性接入命令”，再点“复制接入命令”。</li>
      <li><strong>在节点终端执行。</strong>把命令先粘贴到本机文本编辑器，把 JSON 中 <code>"endpoint": "https://节点域名:映射端口"</code> 的值替换为节点实际地址，例如 <code>"endpoint": "https://node.example.com"</code>。不要改 <code>panel</code>、<code>panel_id</code> 和 <code>ticket</code>；公网可信证书的 <code>node_ca</code> 留空。复制修改后的<strong>全部多行命令</strong>到已登录节点机的终端执行。票据仅有效 5 分钟且只能使用一次，超时或用过就回面板重新生成；命令含凭据，不要公开。成功后命令会清理临时入网文件，失败时请保护该文件并在排错结束后删除。</li>
      <li><strong>检查并启用。</strong>安装显示成功后，在节点机执行 <code>sudo systemctl status filepanel-node</code>。回主面板点击“刷新节点”，找到新节点并点击“检查面板到节点”；如需存文件，勾选“存储文件”并保存；如需给访客提供出口，勾选“提供下载线路”并保存。上传一个小测试文件到节点，再从访客网络检查下载；控制连接在线不代表整条下载路径已通过。</li>
