@@ -269,6 +269,7 @@ summary::marker { color: var(--text-muted); font-size: 12px; }
 summary:hover { background: var(--surface-secondary); }
 details[open] > summary { color: var(--accent); }
 #page-tutorial li { margin-bottom: 8px; }
+#page-tutorial pre { overflow-x: auto; padding: 12px; background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .section-card > h3, .section-card > p { margin: 16px 20px; }
 .asset-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 .asset-thumbnail { width: 96px; height: 56px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-secondary) center/contain no-repeat; flex-shrink: 0; }

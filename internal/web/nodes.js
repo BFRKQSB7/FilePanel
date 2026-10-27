@@ -34,7 +34,7 @@ function draw(preserveConfig=false) {
  const panelCA = el('textarea'); panelCA.placeholder = '使用系统信任的证书时留空'; panelCA.rows = 3;
  panelCA.value = state.ca || '';
  const command = el('textarea'); command.readOnly = true; command.rows = 4; command.setAttribute('aria-label', '节点接入命令');
- setup.append(el('p','接入前需要：另一台服务器、可访问的 HTTPS 地址及已验证的程序发布包。依次完成安装准备、生成接入命令、在额外服务器执行、刷新检查连接。'),button('查看地址与节点接入帮助',()=>FP.navigate('tutorial')),field('节点连接的面板 HTTPS 地址', endpoint), field('自签名证书的信任文件（CA / PEM，通常留空）', panelCA),
+ setup.append(el('p','接入前需要：另一台服务器、可访问的 HTTPS 地址及已验证的程序发布包。依次完成安装准备、生成接入命令、在额外服务器执行、刷新检查连接。'),el('p','在线接入命令依赖 GitHub Releases 中与当前面板版本相同的安装包；如果该版本尚未发布，下载会失败。票据有效 5 分钟且只能使用一次，请准备好节点环境后再生成。'),button('查看地址与节点接入帮助',()=>FP.navigate('tutorial')),field('节点连接的面板 HTTPS 地址', endpoint), field('自签名证书的信任文件（CA / PEM，通常留空）', panelCA),
   button('生成一次性接入命令', async () => { const r = await FP.api('/api/nodes/ticket', json('POST', { endpoint: endpoint.value, ca: panelCA.value })); command.value = r.command; endpoint.removeAttribute('data-edited');panelCA.removeAttribute('data-edited');syncDirty();FP.toast(r.note); }), command,
   button('复制接入命令', async () => { if(!command.value){FP.toast('请先生成接入命令');return;}await FP.copy(command.value,command); }),
   el('p', '先将接入命令 JSON 内的节点地址换成实际 HTTPS 地址，私有节点证书在 node_ca 填入 PEM，再在节点终端执行。在线安装器自动下载并校验与面板版本一致的程序，以专用用户运行并启用自启，监听 127.0.0.1:8081；管理员配置 HTTPS 反代，NAT 端口须逐跳可达。入网文件成功使用后删除。'));

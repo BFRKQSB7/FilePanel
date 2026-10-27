@@ -18,8 +18,8 @@ import (
 	"strings"
 )
 
-var Version = "0.6.1"
-var Sequence = "14"
+var Version = "0.6.2"
+var Sequence = "15"
 var Source = "development"
 
 const Schema = 7

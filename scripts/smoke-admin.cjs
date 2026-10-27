@@ -233,6 +233,8 @@ async function main() {
   check(await page.getByRole('button',{name:'更新本机面板',exact:true}).isDisabled(),'unavailable maintenance keeps update disabled');
   await page.locator('[data-tab=tutorial]').click();check(await page.locator('#access-form').isHidden(),'help no longer contains active address configuration');
   check(await page.getByText('添加节点前：两个网址分别从哪里来？',{exact:true}).isVisible() && await page.getByText('如何给主面板绑定域名，让访客从外网访问？',{exact:true}).isVisible(),'help explains panel and node addresses and domain setup');
+  await page.getByText('如何实际接入一台节点？（Ubuntu 公网示例）',{exact:true}).click();
+  check(await page.locator('#page-tutorial').getByText('sudo ss -lntp',{exact:false}).isVisible() && await page.locator('#page-tutorial').getByText('票据仅有效 5 分钟',{exact:false}).isVisible(),'node guide provides concrete commands and ticket lifetime');
   await page.locator('#page-tutorial [data-go=assets]').click();check(await page.locator('#page-assets').isVisible(),'help opens asset library');
   await page.locator('[data-tab=tutorial]').click();await page.locator('#page-tutorial [data-go=settings-nodes]').click();check(await page.locator('#settings-nodes').isVisible(),'help opens node settings');
   // Preserve unsaved edits even when a delayed refresh finishes after typing.
