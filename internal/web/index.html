@@ -38,7 +38,98 @@
   <section class="upload-area" aria-label="文件上传"><div class="drop" id="drop-zone"><div class="upload-symbol"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#cloud-upload"></use></svg></div><div><div class="drop-title">把文件拖到这里，即刻收好</div><div class="drop-hint">支持多文件上传 · 单文件最大 10 GiB · 自动校验完整性</div><div class="upload-name" id="upload-status" role="status"></div><div id="progress" class="progress hidden"><span></span></div></div><button class="quiet-btn bc-button" id="choose-upload">选择文件</button><input id="file-picker" type="file" multiple class="hidden"></div><details class="upload-log"><summary>上传记录</summary><ul id="upload-results" aria-live="polite"></ul></details></section>
  </div>
  <div id="page-data" class="hidden"><div class="heading"><div><h1>用量与状态</h1><p>查看磁盘空间、下载流量和连接状态。</p></div><button class="quiet-btn" id="data-refresh">刷新数据</button></div><p id="data-status" role="status"></p><div class="stat-grid"><div class="stat"><div class="stat-label">所在磁盘总量</div><div class="stat-value" id="data-total">—</div></div><div class="stat"><div class="stat-label">磁盘已使用</div><div class="stat-value" id="data-used">—</div></div><div class="stat"><div class="stat-label">磁盘可用空间</div><div class="stat-value" id="data-free">—</div></div></div><p class="section-sub">可用空间不等于可上传空间：系统会保留安全余量，并为正在上传的文件预留空间。</p></div>
- <div id="page-tutorial" class="hidden"><div class="heading"><div><h1>使用帮助</h1><p>一台服务器即可使用；域名和额外节点均可稍后配置。</p></div><button id="show-start" class="quiet-btn">重新查看开始指引</button></div><section class="section-card"><div class="setting-form"><h2>上传并分享文件</h2><ol><li>在“文件”页选择或拖入文件，等待结果显示“已完成”。文件默认私有。</li><li>点击文件旁的“分享”，选择“私密分享（仅凭链接访问）”或“公开分享（在主页展示）”。标题、版本、介绍和图片均可留空。</li><li>点击“保存分享设置”，然后复制分享链接发给他人。</li><li>私密分享不在主页展示。已分享文件可点击“取消分享”，确认后原链接失效，文件仍保留。</li><li>使用“分享状态”筛选已分享文件，勾选后可批量转私密、转公开或取消分享。分享窗口可选择下载页面模板，并指定可用的下载 / 中转出口。</li><li>“更多 → 存储与副本”支持复制并保留原件、移除额外副本；只保留主位置就是单份存储。存储与下载出口分别配置，地区下载按钮表示实际流量出口。</li></ol><p>不分享：仅管理员访问。私密分享：仅凭链接访问下载页面，不在主页展示。公开分享：在主页展示，也可通过链接访问。</p><button class="quiet-btn" data-go="files">前往文件</button></div></section><section class="section-card"><div class="setting-form"><h2>让访客从外网访问</h2><p>分享链接使用站点访问地址。若链接含 localhost、127.0.0.1 或内网地址，其他网络的访客通常无法打开。</p><p>在“设置 → 访问地址”选择你的情况，填写服务商提供的公网地址和端口，再按检查结果处理。当前入口能访问，不代表其他网络也能访问。</p><button class="quiet-btn" data-go="settings-access">配置访问地址</button></div></section><section class="section-card"><div class="setting-form"><h2>常见问题与术语</h2><details><summary>磁盘容量和下载流量有什么区别？</summary><p>磁盘是存放文件的空间；流量是上传和下载传输的数据量。FilePanel 只统计自身传输，不等于整机流量或服务商账单。请按套餐额度配置流量保护。</p><button class="quiet-btn" data-go="settings-protection">设置流量保护</button></details><details><summary>校验码、Markdown、节点是什么？</summary><p>SHA-256 是文件校验码，用于比对下载是否完整，普通下载无需输入。Markdown 是文字排版语法，不熟悉时直接写普通文字即可。节点是额外的服务器，可用于存放文件或提供下载线路；只有一台服务器时不需要添加。</p></details><details><summary>DNS、NAT、HTTPS 和证书是什么？</summary><p>DNS 把域名指向服务器地址。NAT 端口映射把外部端口转到服务器内部端口。HTTPS 加密浏览器与服务器之间的连接，证书用于验证服务器身份。无法确定公网地址或映射端口时，请查看服务商控制台，不要照抄内网网卡地址。</p></details><details><summary>下载受限或文件暂不可用怎么办？</summary><p>先查看“用量与状态”的保护提示和“设置 → 节点与线路”的连接状态。额度用尽后需等待下一周期，或按真实套餐修正额度；请勿为了排错随意关闭保护。网络失败时可重新打开分享页获取下载地址。</p></details><details><summary>如何备份、更新或找回密码？</summary><p>外观配置包只保存站点外观，不是整站备份。整站备份、恢复和密码问题需要服务器管理员处理；不要删除数据目录重新初始化。程序更新的前置条件和备份说明在“设置 → 更新与维护”。</p><button class="quiet-btn" data-go="settings-maintenance">查看维护说明</button></details></div></section></div>
+ <div id="page-tutorial" class="hidden">
+  <div class="heading"><div><h1>使用帮助</h1><p>从上传到分享，以及图片、存储和访问问题的操作指南。</p></div><button id="show-start" class="quiet-btn">重新查看开始指引</button></div>
+  <section class="section-card"><div class="setting-form">
+   <h2>快速开始：上传并分享</h2>
+   <ol>
+    <li>进入“我的文件”，点击“上传文件”或将文件拖入上传区域。等待显示“已完成”；如果连接中断，先刷新列表确认文件是否已经保存，再决定是否重试。</li>
+    <li>在文件行点击“分享”，选择“私密分享”或“公开分享”。不填写标题、介绍和图片也可以分享；可选的下载页面模板只改变页面布局。</li>
+    <li>点击“保存分享设置”，等待保存成功，再点击“复制分享链接”。建议用未登录的浏览器或另一台设备打开链接，检查页面和下载是否正常。</li>
+   </ol>
+   <p><strong>三种状态：</strong>不分享时仅管理员可访问；私密分享不在公开主页出现，但任何拥有链接的人都可以访问；公开分享既在主页展示，也可通过链接访问。私密链接不是密码保护，请只发给可信的人。</p>
+   <button class="quiet-btn" data-go="files">前往我的文件</button>
+  </div></section>
+  <section class="section-card"><div class="setting-form">
+   <h2>文件与分享管理</h2>
+   <details open><summary>如何重新编辑、切换或取消分享？</summary>
+    <ol><li>在“我的文件”找到文件，再次点击“分享”，修改分享方式、模板、下载线路或介绍。</li><li>点击“保存分享设置”后，点击“查看分享页面”检查效果。文件重命名或更换存储位置后，分享链接保持不变。</li><li>取消分享可点击文件旁的“取消分享”，或在分享窗口选择“不分享”并保存。取消后原页面和下载授权失效，文件与图片保留；再次开启分享前，访客无法访问。</li></ol>
+   </details>
+   <details><summary>如何批量管理分享？</summary>
+    <ol><li>在文件列表上方按分享状态筛选，也可以搜索文件名。</li><li>勾选要处理的文件，或使用“全选”；核对已选数量。</li><li>选择“批量转私密分享”“批量转公开分享”或“批量取消分享”，按提示确认。操作的是已选文件，请先核对选择范围。</li></ol>
+   </details>
+   <details><summary>如何查找、选择、重命名和删除文件？</summary>
+    <p>搜索框可按名称查找，类型和分享状态可组合筛选；右上角可切换列表与网格。单击选择文件，双击查看属性，右键打开操作菜单；Ctrl 可多选、Shift 可连续选择，选中单个文件后按 F2 重命名。也可通过文件旁“更多”操作。</p>
+    <p><strong>删除文件不可从面板恢复：</strong>删除会使分享和介绍页失效，并清理关联图片与所有存储副本；离线副本会保留清理记录并等待处理。需要保留内容时，请先自行备份。</p>
+   </details>
+  </div></section>
+  <section class="section-card"><div class="setting-form">
+   <h2>分享页面与素材库</h2>
+   <details open><summary>如何在介绍里插入图片或更换封面？</summary>
+    <ol><li>在文件旁点击“分享”，展开“编辑介绍与图片（可选）”。在“文件介绍”里输入文字，并把光标放到希望显示图片的位置。</li><li>点击“上传图片”，或点击“从素材库选择”查看该文件已有的素材。图片上传成功后立即保存并占用空间，即使关闭窗口或没有保存分享设置也会保留。</li><li>在图片下点击“插入正文”，会在光标处插入图片标记；也可点击“设为封面”或勾选“展示为截图”。点击“预览”检查正文效果。</li><li>点击窗口底部“保存分享设置”，图片引用才会生效。之后可再次打开分享设置，移除旧图片标记或取消封面、截图，选择新图片并保存。</li></ol>
+    <p>正文支持普通文字和 Markdown，例如 <code># 标题</code>、<code>- 列表项</code>、<code>**加粗**</code>；不支持 HTML。每个文件最多 8 张图片，每张不超过 2 MiB，支持 PNG、JPEG、GIF 和 WebP。</p>
+   </details>
+   <details><summary>素材库的分类和删除是什么意思？</summary>
+    <p>左侧“素材库”集中展示分享图片，可按图片名、所属文件和使用状态筛选。“使用中”表示已保存为封面、正文图片或截图；“未使用”表示没有已保存的引用。分享编辑窗口的“本次上传”只标记当前窗口上传的图片，不等于已经用于页面。</p>
+    <p>关闭编辑窗口或取消分享不会自动删除图片；分享关闭后，已保存的引用仍算“使用中”。未使用的图片不向访客公开。素材属于各自文件，当前不能跨文件复用；删除所属文件时，其素材也会被清理。</p>
+    <ol><li>要删除使用中的图片，先进入该文件的分享设置，移除它在封面、正文和截图中的所有引用，然后保存。</li><li>返回素材库，筛选“未使用”，勾选需要删除的图片，点击“删除所选未使用图片”并确认。删除是永久操作，不能恢复；使用中的图片有删除保护。</li></ol>
+   </details>
+   <button class="quiet-btn" data-go="assets">前往素材库</button>
+  </div></section>
+  <section class="section-card"><div class="setting-form">
+   <h2>多机存储与下载线路</h2>
+   <details open><summary>添加节点前：两个网址分别从哪里来？</summary>
+    <p><strong>主面板地址</strong>是节点用来连接主面板的 HTTPS 地址，也是管理员和访客访问站点的入口。例如 <code>https://files.example.com</code>，填写到“节点连接的面板 HTTPS 地址”时不要加 <code>/admin</code>。节点机必须能访问它。</p>
+    <p><strong>节点地址</strong>是主面板访问额外服务器上节点服务的 HTTPS 地址，例如 <code>https://node.example.com</code>。生成接入命令后，在命令中的 JSON 把 <code>endpoint</code> 的占位地址换成节点的实际地址；JSON 中的 <code>panel</code> 是主面板地址，两者用途不同。</p>
+    <p>通常给两台机器各用一个子域名，并分别解析到对应服务器的公网 IP；域名可来自同一个已购买的域名。例如主面板 <code>files.example.com</code> 指向主面板公网 IP，节点 <code>node.example.com</code> 指向节点公网 IP。这里的域名只是示例，不能直接照填。不同机器也可能共用一个公网 IP，这时须由服务商的端口映射或已有反向代理将各入口正确分流；不能只因为 IP 相同就填同一个入口。端口不是 443 时要写在网址里，例如 <code>https://node.example.com:45001</code>。</p>
+    <p>公网 IP 和映射端口从各自服务器服务商控制台查询；域名从域名注册商购买或使用已有域名，在 DNS 托管平台添加解析。IP、域名、端口和证书要对应实际服务器，内网地址或服务器控制台显示的网卡地址不一定能从公网访问。</p>
+   </details>
+   <details><summary>如何实际接入一台节点？</summary>
+    <ol><li>准备另一台支持的 Linux 服务器，确认它能访问主面板 HTTPS 地址；确认主面板也能访问节点的 HTTPS 地址和端口。节点需要可信证书或明确配置私有证书信任。</li>
+    <li>为节点配置指向节点服务的 HTTPS 反向代理及防火墙／NAT 映射。在线安装后的节点服务默认监听节点机的 <code>127.0.0.1:8081</code>，它只是本机内部地址，不是填给主面板的公网网址。已有代理和端口需按实际环境配置，安装器不会替你设置 DNS 或 HTTPS 代理。</li>
+    <li>进入“设置 → 节点与线路”，展开“添加额外服务器（高级）”，在“节点连接的面板 HTTPS 地址”填入节点能访问的主面板地址。主面板使用系统信任证书时，CA 留空；使用私有证书时填入供节点信任的 CA / PEM。</li>
+    <li>点击“生成一次性接入命令”，将生成命令中 JSON 的 <code>endpoint</code> 改为实际节点 HTTPS 地址；节点使用私有证书时，将其可信 CA / PEM 填入 <code>node_ca</code>。复制完整命令到<strong>节点服务器</strong>终端执行。命令含一次性票据，请勿发给他人；入网后删除临时入网文件。在线安装需要该面板版本对应的可验证发布包。</li>
+    <li>返回面板点击“刷新节点”，再点“检查面板到节点”。按需勾选“存储文件”或“提供下载线路”并保存；控制连接在线后，仍需分别检查面板到节点以及访客到下载出口的实际连接。</li></ol>
+   </details>
+   <details open><summary>如何保存多个副本，或只保留一个位置？</summary>
+    <ol><li>在文件旁选择“更多 → 存储与副本”，查看主位置和已校验副本。</li><li>在“新增副本位置”选择服务器，点击“复制并保留原件”。等待存储任务完成；新副本完成校验后才能使用。</li><li>要只保留一处，在其他非主位置点击“移除这个副本”，确认后查看清理任务。主位置始终保留；需要改变主位置时，在“更多”中选择“移动”。</li></ol>
+    <p>移动到已有副本的位置可复用已校验副本，无需重新传输；以存储任务显示的结果为准。移动、复制或清理遇到故障时，可在存储任务中查看状态和可用的重试操作。</p>
+   </details>
+   <details><summary>存储位置和下载／中转出口有什么区别？</summary>
+    <p>存储位置决定文件副本放在哪台机器；下载出口决定访客从哪台机器接收数据。出口可以读取本机副本，也可以从存储服务器中转，因此只存一份也可配置其他可用出口，中转会消耗相关机器的流量。</p>
+    <ol><li>先在“设置 → 节点与线路”配置并启用需要的出口，确认节点连接状态。</li><li>打开文件的“分享”，在“下载线路”选择使用所有已启用出口，或手动指定并勾选需要的服务器。</li><li>保存分享设置并打开分享页面，检查按实际出口地区显示的下载按钮；实际可用性仍需从访客网络测试。</li></ol>
+   </details>
+   <button class="quiet-btn" data-go="settings-nodes">前往节点与线路</button>
+  </div></section>
+  <section class="section-card"><div class="setting-form">
+   <h2>访问、用量与常见问题</h2>
+   <details open><summary>如何给主面板绑定域名，让访客从外网访问？</summary>
+    <ol><li><strong>准备域名和公网入口。</strong>在域名注册商购买域名，或使用已有域名的一个子域名，例如 <code>files.example.com</code>。到主面板服务器服务商控制台查公网 IPv4 / IPv6、允许的外部端口及 NAT 映射；先保留目前能登录的入口。</li>
+    <li><strong>添加 DNS 解析。</strong>在该域名的 DNS 托管平台新增 A 记录，把子域名指向主面板公网 IPv4；有可用公网 IPv6 时可另加 AAAA 记录。主机记录应按托管平台的填写规则输入，通常 <code>files</code> 对应 <code>files.example.com</code>。等待解析生效；没有公网 IPv6 时不要添加错误的 AAAA 记录。</li>
+    <li><strong>选择 HTTPS 方式。</strong>自动申请证书需要该域名的公网 80 和 443 端口可达，且监听端口没有被其他服务占用；同时检查云安全组和系统防火墙。若已有 Nginx / Caddy 等代理，先在代理上配置域名、证书及转发到 FilePanel，再选择已有 HTTPS 代理。只有映射端口或 80 / 443 不可用时，不要假设自动证书可以成功，需使用已有可用代理或其他实际可达入口。</li>
+    <li><strong>在面板检查并启用。</strong>打开“设置 → 访问地址”，选择对应模式，在“完整访问地址”填入实际网址，例如 <code>https://files.example.com</code>；根据实际情况填写公网 IP、外部端口，以及是否使用 Cloudflare 等 DNS 代理。自动证书模式按页面提示填写邮箱并同意条款。</li>
+    <li>点击“检查候选地址”，查看下方诊断和 DNS／反代指导，处理失败或待验证项后重新检查；可用时点击“验证并启用”。等页面显示已启用，再用另一网络打开后台及分享链接测试。检查或启用失败时，原入口保留。</li></ol>
+    <p>更换主域名可能改变以后生成的分享链接域名；要让旧域名继续可用，需要自行保留旧 DNS、证书和必要的跳转。使用代理时，证书由代理维护；FilePanel 不会替你修改现有代理或 DNS。</p>
+    <button class="quiet-btn" data-go="settings-access">配置访问地址</button>
+   </details>
+   <details><summary>别人打不开分享链接怎么办？</summary>
+    <ol><li>确认文件仍处于私密或公开分享状态，并复制保存后的链接；取消分享会使原页面和下载授权失效。</li><li>如果地址含 localhost、127.0.0.1 或内网地址，其他网络通常无法访问。进入“设置 → 访问地址”，按实际公网地址、端口或域名填写并检查。</li><li>检查服务商防火墙、NAT 映射和反向代理，再用其他网络测试。面板显示节点控制连接在线，不等于访客到下载出口的路径一定可用。</li></ol>
+    <button class="quiet-btn" data-go="settings-access">配置访问地址</button>
+   </details>
+   <details><summary>下载受限、文件暂不可用或流量数值不一致？</summary>
+    <p>先查看“用量与状态”的保护提示和“设置 → 节点与线路”的状态。达到保护线后需等待下一统计周期，或按真实套餐修正额度；不要为了排错随意关闭保护。网络失败时可重新打开分享页获取下载地址。</p>
+    <p>磁盘容量是存放文件所需空间，流量是传输的数据量。FilePanel 统计本应用内容流，不等于整机网卡流量或服务商账单；流量周期按 UTC 时间计算。</p>
+    <button class="quiet-btn" data-go="settings-protection">设置流量保护</button>
+   </details>
+   <details><summary>如何修改密码、备份和更新？</summary>
+    <p>在“设置 → 账号安全”输入当前密码和新密码；修改后所有设备需要重新登录。忘记密码、整站备份与恢复需要服务器管理员处理，不要删除数据目录重新初始化。外观配置包只保存外观，不是整站备份；更新前请查看维护页面的备份说明。</p>
+    <button class="quiet-btn" data-go="settings-maintenance">查看更新与维护</button>
+   </details>
+   <details><summary>常见术语：SHA-256、DNS、NAT 和 HTTPS</summary>
+    <p>SHA-256 是文件校验码，可用于比对下载是否完整；普通下载无需输入。DNS 将域名指向服务器地址；NAT 端口映射将外部端口转到服务器内部端口。HTTPS 加密浏览器与服务器之间的连接，证书用于验证服务器身份。公网地址和映射端口以服务商控制台的实际配置为准。</p>
+   </details>
+  </div></section>
+ </div>
  <div id="page-settings" class="hidden"><div class="heading"><div><h1>设置</h1><p>按用途选择分区；切换分区会保留未保存的输入，刷新或关闭页面前请保存。</p></div></div><nav id="settings-nav" class="settings-nav" aria-label="设置分区"><button data-settings="appearance">站点外观</button><button data-settings="access">访问地址</button><button data-settings="protection">流量保护</button><button data-settings="nodes">节点与线路</button><button data-settings="account">账号安全</button><button data-settings="maintenance">更新与维护</button></nav><div id="settings-appearance" class="settings-pane"></div><div id="settings-access" class="settings-pane hidden"></div><div id="settings-protection" class="settings-pane hidden"></div><div id="settings-nodes" class="settings-pane hidden"></div><div id="settings-account" class="settings-pane hidden"><section class="section-card"><div class="section-head"><div><div class="section-title">修改管理员密码</div><div class="section-sub">修改后，所有已登录设备都需要重新登录。</div></div></div><form class="setting-form" id="password-form"><div class="field"><label for="current-password">当前密码</label><input id="current-password" type="password" autocomplete="current-password" required></div><div class="field"><label for="next-password">新密码（12–72 字节，建议至少 12 个英文字符）</label><input id="next-password" type="password" minlength="12" autocomplete="new-password" required></div><button type="submit" class="primary-btn">更新密码</button></form></section></div><div id="settings-maintenance" class="settings-pane hidden"></div></div>
  </main>
 </div>
