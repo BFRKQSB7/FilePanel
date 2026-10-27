@@ -116,6 +116,26 @@ const assetPage=document.createElement('div');assetPage.id='page-assets';assetPa
 document.querySelectorAll('.nav button').forEach(b => b.addEventListener('click', () => navigate(b.dataset.tab)));
 document.querySelectorAll('[data-settings]').forEach(b => b.addEventListener('click', () => navigate('settings', b.dataset.settings)));
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { const [tab, section] = b.dataset.go.split('-'); navigate(tab, section); }));
+// Help navigation stays inside the tutorial; changing the hash would invoke the app router.
+function showHelp(target) {
+ if (!target) return;
+ for (let parent = target; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
+ const focus = target.tagName === 'DETAILS' ? target.querySelector('summary') : target;
+ target.scrollIntoView({block:'start'}); focus?.focus({preventScroll:true});
+}
+document.querySelectorAll('[data-help-target]').forEach(button => button.addEventListener('click', () => showHelp(document.getElementById(button.dataset.helpTarget))));
+const helpSearch = $('#help-search'), helpResults = $('#help-results');
+helpSearch.addEventListener('input', () => {
+ const query = helpSearch.value.trim().toLocaleLowerCase();
+ helpResults.replaceChildren();
+ if (!query) return;
+ const matches = [$('#help-upload'), ...document.querySelectorAll('#page-tutorial details')].filter(item => item.textContent.toLocaleLowerCase().includes(query));
+ helpResults.append(node('p', matches.length ? '找到 ' + matches.length + ' 个相关章节' : '没有找到相关章节，请换个关键词。'));
+ for (const item of matches) {
+  const button = node('button', item.querySelector('summary, h2').textContent, 'quiet-btn');
+  button.type = 'button'; button.addEventListener('click', () => showHelp(item)); helpResults.append(button);
+ }
+});
 function showAuth() {
  csrf = ''; items = []; queue.length = 0; selectedFiles.clear(); anchorID=focusedID=''; closeContextMenu();
  if (activeDialog) { activeDialog.close(); activeDialog.remove(); activeDialog = null; }

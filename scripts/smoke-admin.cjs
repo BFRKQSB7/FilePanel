@@ -233,8 +233,22 @@ async function main() {
   check(await page.getByRole('button',{name:'更新本机面板',exact:true}).isDisabled(),'unavailable maintenance keeps update disabled');
   await page.locator('[data-tab=tutorial]').click();check(await page.locator('#access-form').isHidden(),'help no longer contains active address configuration');
   check(await page.getByText('添加节点前：两个网址分别从哪里来？',{exact:true}).isVisible() && await page.getByText('如何给主面板绑定域名，让访客从外网访问？',{exact:true}).isVisible(),'help explains panel and node addresses and domain setup');
-  await page.getByText('如何实际接入一台节点？（Ubuntu 公网示例）',{exact:true}).click();
-  check(await page.locator('#page-tutorial').getByText('sudo ss -lntp',{exact:false}).isVisible() && await page.locator('#page-tutorial').getByText('票据仅有效 5 分钟',{exact:false}).isVisible(),'node guide provides concrete commands and ticket lifetime');
+  for(const target of ['help-upload','help-domain','help-nodes','help-storage','help-troubleshooting','help-maintenance']) {
+   await page.locator('#help-directory [data-help-target="'+target+'"]').click();
+   check(await page.locator('#'+target).isVisible() && await page.locator('#'+target).evaluate(e=>e.tagName!=='DETAILS'||e.open),'help directory opens '+target);
+  }
+  await page.locator('#help-search').fill('502');
+  check(await page.locator('#help-results').getByRole('button',{name:/Caddy/}).count()===1,'help search finds folded troubleshooting');
+  await page.locator('#help-results').getByRole('button',{name:/Caddy/}).click();
+  check(await page.locator('#help-troubleshooting summary').filter({hasText:'Caddy 配置错误、端口占用、启动失败或返回 502'}).locator('..').evaluate(e=>e.open),'help search opens the result');
+  await page.locator('#help-search').fill('节点离线');check(await page.locator('#help-results').getByRole('button',{name:/节点离线/}).count()===1,'suggested node-offline search finds a result');
+  await page.locator('#help-search').fill('');await page.locator('#help-nodes summary').click();
+  await page.locator('#help-directory [data-help-target=help-nodes]').click();
+  check(await page.locator('#help-nodes pre code').getByText('sudo ss -lntp',{exact:true}).isVisible() && await page.locator('#help-nodes').getByText('票据仅有效 5 分钟',{exact:false}).isVisible(),'node guide provides concrete commands and ticket lifetime');
+  check((await page.locator('#help-nodes pre code').nth(2).textContent()).trim()==='node.example.com {\n    reverse_proxy 127.0.0.1:8081\n}','configuration snippet preserves complete text and line breaks');
+  check(await page.locator('[data-help-target]').evaluateAll(buttons=>buttons.every(b=>document.getElementById(b.dataset.helpTarget))),'all help navigation targets exist');
+  await page.locator('#help-nodes').locator('..').getByRole('button',{name:'返回帮助目录'}).click();check(await page.evaluate(()=>document.activeElement.id==='help-directory'),'help return moves focus to directory');
+  await page.setViewportSize({width:375,height:900});check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'expanded help commands fit narrow viewport');await page.setViewportSize({width:1440,height:900});
   await page.locator('#page-tutorial [data-go=assets]').click();check(await page.locator('#page-assets').isVisible(),'help opens asset library');
   await page.locator('[data-tab=tutorial]').click();await page.locator('#page-tutorial [data-go=settings-nodes]').click();check(await page.locator('#settings-nodes').isVisible(),'help opens node settings');
   // Preserve unsaved edits even when a delayed refresh finishes after typing.

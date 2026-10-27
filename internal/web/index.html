@@ -40,7 +40,21 @@
  <div id="page-data" class="hidden"><div class="heading"><div><h1>用量与状态</h1><p>查看磁盘空间、下载流量和连接状态。</p></div><button class="quiet-btn" id="data-refresh">刷新数据</button></div><p id="data-status" role="status"></p><div class="stat-grid"><div class="stat"><div class="stat-label">所在磁盘总量</div><div class="stat-value" id="data-total">—</div></div><div class="stat"><div class="stat-label">磁盘已使用</div><div class="stat-value" id="data-used">—</div></div><div class="stat"><div class="stat-label">磁盘可用空间</div><div class="stat-value" id="data-free">—</div></div></div><p class="section-sub">可用空间不等于可上传空间：系统会保留安全余量，并为正在上传的文件预留空间。</p></div>
  <div id="page-tutorial" class="hidden">
   <div class="heading"><div><h1>使用帮助</h1><p>从上传到分享，以及图片、存储和访问问题的操作指南。</p></div><button id="show-start" class="quiet-btn">重新查看开始指引</button></div>
-  <section class="section-card"><div class="setting-form">
+  <section class="section-card" id="help-directory" tabindex="-1"><div class="setting-form">
+   <h2>你想做什么？</h2>
+   <p>一台服务器就能上传和分享文件；域名、额外节点、副本与多条下载线路都按需配置。主面板安装后，通过实际可用的后台地址完成初始化或登录，即可开始使用。</p>
+   <nav class="help-nav" aria-label="帮助任务目录">
+    <button class="quiet-btn" type="button" data-help-target="help-upload">上传与分享文件</button>
+    <button class="quiet-btn" type="button" data-help-target="help-domain">绑定域名与 HTTPS</button>
+    <button class="quiet-btn" type="button" data-help-target="help-nodes">添加额外服务器</button>
+    <button class="quiet-btn" type="button" data-help-target="help-storage">配置副本与下载线路</button>
+    <button class="quiet-btn" type="button" data-help-target="help-troubleshooting">排查常见问题</button>
+    <button class="quiet-btn" type="button" data-help-target="help-maintenance">维护与恢复</button>
+   </nav>
+   <label class="field" for="help-search"><span>搜索帮助</span><input id="help-search" type="search" placeholder="例如：502、节点离线、证书、备份"></label>
+   <div id="help-results" role="status" aria-live="polite"></div>
+  </div></section>
+  <section class="section-card"><div class="setting-form" id="help-upload" tabindex="-1">
    <h2>快速开始：上传并分享</h2>
    <ol>
     <li>进入“我的文件”，点击“上传文件”或将文件拖入上传区域。等待显示“已完成”；如果连接中断，先刷新列表确认文件是否已经保存，再决定是否重试。</li>
@@ -49,10 +63,11 @@
    </ol>
    <p><strong>三种状态：</strong>不分享时仅管理员可访问；私密分享不在公开主页出现，但任何拥有链接的人都可以访问；公开分享既在主页展示，也可通过链接访问。私密链接不是密码保护，请只发给可信的人。</p>
    <button class="quiet-btn" data-go="files">前往我的文件</button>
+   <button class="quiet-btn" type="button" data-help-target="help-directory">返回帮助目录</button>
   </div></section>
   <section class="section-card"><div class="setting-form">
    <h2>文件与分享管理</h2>
-   <details open><summary>如何重新编辑、切换或取消分享？</summary>
+   <details><summary>如何重新编辑、切换或取消分享？</summary>
     <ol><li>在“我的文件”找到文件，再次点击“分享”，修改分享方式、模板、下载线路或介绍。</li><li>点击“保存分享设置”后，点击“查看分享页面”检查效果。文件重命名或更换存储位置后，分享链接保持不变。</li><li>取消分享可点击文件旁的“取消分享”，或在分享窗口选择“不分享”并保存。取消后原页面和下载授权失效，文件与图片保留；再次开启分享前，访客无法访问。</li></ol>
    </details>
    <details><summary>如何批量管理分享？</summary>
@@ -62,10 +77,11 @@
     <p>搜索框可按名称查找，类型和分享状态可组合筛选；右上角可切换列表与网格。单击选择文件，双击查看属性，右键打开操作菜单；Ctrl 可多选、Shift 可连续选择，选中单个文件后按 F2 重命名。也可通过文件旁“更多”操作。</p>
     <p><strong>删除文件不可从面板恢复：</strong>删除会使分享和介绍页失效，并清理关联图片与所有存储副本；离线副本会保留清理记录并等待处理。需要保留内容时，请先自行备份。</p>
    </details>
+   <button class="quiet-btn" type="button" data-help-target="help-directory">返回帮助目录</button>
   </div></section>
   <section class="section-card"><div class="setting-form">
    <h2>分享页面与素材库</h2>
-   <details open><summary>如何在介绍里插入图片或更换封面？</summary>
+   <details><summary>如何在介绍里插入图片或更换封面？</summary>
     <ol><li>在文件旁点击“分享”，展开“编辑介绍与图片（可选）”。在“文件介绍”里输入文字，并把光标放到希望显示图片的位置。</li><li>点击“上传图片”，或点击“从素材库选择”查看该文件已有的素材。图片上传成功后立即保存并占用空间，即使关闭窗口或没有保存分享设置也会保留。</li><li>在图片下点击“插入正文”，会在光标处插入图片标记；也可点击“设为封面”或勾选“展示为截图”。点击“预览”检查正文效果。</li><li>点击窗口底部“保存分享设置”，图片引用才会生效。之后可再次打开分享设置，移除旧图片标记或取消封面、截图，选择新图片并保存。</li></ol>
     <p>正文支持普通文字和 Markdown，例如 <code># 标题</code>、<code>- 列表项</code>、<code>**加粗**</code>；不支持 HTML。每个文件最多 8 张图片，每张不超过 2 MiB，支持 PNG、JPEG、GIF 和 WebP。</p>
    </details>
@@ -75,77 +91,123 @@
     <ol><li>要删除使用中的图片，先进入该文件的分享设置，移除它在封面、正文和截图中的所有引用，然后保存。</li><li>返回素材库，筛选“未使用”，勾选需要删除的图片，点击“删除所选未使用图片”并确认。删除是永久操作，不能恢复；使用中的图片有删除保护。</li></ol>
    </details>
    <button class="quiet-btn" data-go="assets">前往素材库</button>
+   <button class="quiet-btn" type="button" data-help-target="help-directory">返回帮助目录</button>
   </div></section>
   <section class="section-card"><div class="setting-form">
    <h2>多机存储与下载线路</h2>
-   <details open><summary>添加节点前：两个网址分别从哪里来？</summary>
+   <details><summary>添加节点前：两个网址分别从哪里来？</summary>
     <p><strong>主面板地址</strong>是节点用来连接主面板的 HTTPS 地址，也是管理员和访客访问站点的入口。例如 <code>https://files.example.com</code>，填写到“节点连接的面板 HTTPS 地址”时不要加 <code>/admin</code>。节点机必须能访问它。</p>
     <p><strong>节点地址</strong>是主面板访问额外服务器上节点服务的 HTTPS 地址，例如 <code>https://node.example.com</code>。生成接入命令后，在命令中的 JSON 把 <code>endpoint</code> 的占位地址换成节点的实际地址；JSON 中的 <code>panel</code> 是主面板地址，两者用途不同。</p>
     <p>通常给两台机器各用一个子域名，并分别解析到对应服务器的公网 IP；域名可来自同一个已购买的域名。例如主面板 <code>files.example.com</code> 指向主面板公网 IP，节点 <code>node.example.com</code> 指向节点公网 IP。这里的域名只是示例，不能直接照填。不同机器也可能共用一个公网 IP，这时须由服务商的端口映射或已有反向代理将各入口正确分流；不能只因为 IP 相同就填同一个入口。端口不是 443 时要写在网址里，例如 <code>https://node.example.com:45001</code>。</p>
     <p>公网 IP 和映射端口从各自服务器服务商控制台查询；域名从域名注册商购买或使用已有域名，在 DNS 托管平台添加解析。IP、域名、端口和证书要对应实际服务器，内网地址或服务器控制台显示的网卡地址不一定能从公网访问。</p>
    </details>
-   <details><summary>如何实际接入一台节点？（Ubuntu 公网示例）</summary>
+   <details id="help-nodes"><summary>如何实际接入一台节点？（Ubuntu 公网示例）</summary>
     <p>下面以<strong>新装 Ubuntu、独立公网 IP、能使用 80 和 443 的节点机</strong>为例，使用 Caddy 提供节点 HTTPS。准备一台已经能用 HTTPS 访问的主面板、一台额外节点机、域名的 DNS 管理权限，以及节点机 SSH 登录信息。节点安装不会自动配置 DNS、防火墙或反向代理。示例域名必须换成你自己的；机器已有网站、代理或其他业务时，先确认端口和配置，不能覆盖现有服务。</p>
+    <p><strong>先选适用环境：</strong>独立公网 IP、Ubuntu 24.04、80／443 可达且无端口冲突，可按下面示例执行。已有 Nginx／Caddy 时复用原代理，先确认站点配置、证书、转发目标和重载方式；不要再安装另一个占用同端口的代理。NAT、共享 IP 或只有高位端口时，先向服务商确认公网 IP、外部端口→内部端口映射及外部 HTTPS 入口，不能照搬本示例的证书申请步骤。其他系统的包管理和服务命令不同；安装支持范围为 Alpine/OpenRC、Debian/systemd、Ubuntu 24.04/systemd，本例只给 Ubuntu 步骤。</p>
+    <p>遇到不适用的情况，先整理<strong>系统版本、是否 NAT、节点公网 IP、外部→内部端口、已有代理和证书类型</strong>，再确定方案；不要公开 SSH 密码、证书私钥或接入命令。以下每阶段的检查未通过时，先排除问题再继续。</p>
     <ol>
      <li><strong>查询地址并设置解析。</strong>在节点服务器商控制台找到节点的公网 IPv4；在域名的 DNS 管理页面添加 A 记录：主机名填 <code>node</code>，记录值填节点公网 IPv4，例如得到 <code>node.example.com</code>。如果使用 Cloudflare，先选“仅 DNS”（灰云）进行直连测试。确认实际解析结果指向节点，且没有错误的 AAAA 记录。主面板和节点使用不同子域名，例如 <code>files.example.com</code> 和 <code>node.example.com</code>。</li>
      <li><strong>打开端口。</strong>在节点服务器商的安全组／防火墙放行 TCP 80、443；若系统防火墙启用，也需要放行。SSH 端口保持原样。节点程序的 8081 只监听本机，无需对公网开放。自动申请证书需要公网 80 和 443 能到达节点；NAT 没有这两个端口时，此示例不适用，请使用已有 HTTPS 代理或按实际映射另行配置。</li>
      <li><strong>登录节点机并检查占用。</strong>在自己的电脑打开终端，将下面的用户名、IP 和端口替换为节点服务商提供的 SSH 信息。登录后执行第二条命令：若 80 或 443 已被其他程序占用，不要继续照搬 Caddy 步骤。</li>
     </ol>
-    <pre><code>ssh -p SSH端口 用户名@节点公网IP
-sudo ss -lntp</code></pre>
+    <p>在自己的电脑执行（替换 SSH 信息）：</p><pre><code>ssh -p SSH端口 用户名@节点公网IP</code></pre>
+    <p>登录后在节点机执行：</p><pre><code>sudo ss -lntp</code></pre>
+    <p><strong>检查结果：</strong>在自己的电脑或主面板机执行 <code>nslookup node.example.com</code>，将返回的地址与节点服务商提供的公网入口核对；Linux 没有 nslookup 时可用 <code>getent hosts node.example.com</code> 辅助检查系统解析。共享 IP 时同时核对映射端口。节点机的 <code>ss</code> 输出中查看 <code>:80</code>、<code>:443</code> 是否有 LISTEN，空闲才按本示例安装新代理。修改防火墙前保留 SSH 访问，不能仅凭本机监听判断公网可达。</p>
     <ol start="4">
      <li><strong>在节点机安装并配置 Caddy。</strong>在 Ubuntu 终端运行 <code>sudo apt update</code>，再运行 <code>sudo apt install caddy</code>。使用 <code>sudo nano /etc/caddy/Caddyfile</code> 编辑配置；确认没有与现有配置冲突，再添加下面的站点块，把域名换成第 1 步的真实域名。不要删除其他站点配置。nano 中按 Ctrl+O、Enter 保存，Ctrl+X 退出。</li>
     </ol>
     <pre><code>node.example.com {
     reverse_proxy 127.0.0.1:8081
 }</code></pre>
-    <p>执行 <code>sudo caddy validate --config /etc/caddy/Caddyfile</code>，通过后执行 <code>sudo systemctl reload caddy</code>；如果服务未运行，先用 <code>sudo systemctl start caddy</code>。使用 <code>sudo systemctl status caddy</code> 查看状态。Caddy 会尝试为真实域名申请并续期证书；失败时检查 DNS、端口、时间和日志 <code>sudo journalctl -u caddy -n 50 --no-pager</code>。不要关闭证书校验。</p>
+    <p>在节点机执行 <code>sudo caddy validate --config /etc/caddy/Caddyfile</code>，确认配置有效后执行 <code>sudo systemctl reload caddy</code>；如果服务未运行，先用 <code>sudo systemctl start caddy</code>。<code>sudo systemctl status caddy</code> 显示 active (running) 才继续。Caddy 会尝试为真实域名申请并续期证书；失败时检查 DNS、端口、时间和节点机日志 <code>sudo journalctl -u caddy -n 50 --no-pager</code>。不要关闭证书校验；修改现有配置前保存备份并确认可回退。</p>
     <ol start="5">
      <li><strong>先检查节点 HTTPS。</strong>在主面板所在服务器上运行 <code>curl -Iv https://node.example.com</code>，替换为真实域名；确认 TLS 证书受信任且主机名匹配。节点尚未安装时返回 502 可以是代理已连接但后端未启动，不能据此认定节点已可用。此处超时、证书错误或访问到别的网站时先检查解析、端口和代理。</li>
-     <li><strong>生成并修改命令。</strong>在主面板打开“设置 → 节点与线路 → 添加额外服务器（高级）”。“节点连接的面板 HTTPS 地址”填主面板的外网地址（例如 <code>https://files.example.com</code>，不带 <code>/admin</code>）；公网可信证书的 CA 留空。点击“生成一次性接入命令”，再点“复制接入命令”。</li>
+     <li><strong>生成并修改命令。</strong>先在节点机执行 <code>curl -Iv https://files.example.com/admin</code>（替换成真实主面板地址），确认节点能连接且证书可信；失败先检查节点到主面板的 DNS、端口和 TLS。在主面板打开“设置 → 节点与线路 → 添加额外服务器（高级）”。“节点连接的面板 HTTPS 地址”填主面板的外网地址（例如 <code>https://files.example.com</code>，不带 <code>/admin</code>）；公网可信证书的 CA 留空。点击“生成一次性接入命令”，再点“复制接入命令”。</li>
      <li><strong>在节点终端执行。</strong>把命令先粘贴到本机文本编辑器，把 JSON 中 <code>"endpoint": "https://节点域名:映射端口"</code> 的值替换为节点实际地址，例如 <code>"endpoint": "https://node.example.com"</code>。不要改 <code>panel</code>、<code>panel_id</code> 和 <code>ticket</code>；公网可信证书的 <code>node_ca</code> 留空。复制修改后的<strong>全部多行命令</strong>到已登录节点机的终端执行。票据仅有效 5 分钟且只能使用一次，超时或用过就回面板重新生成；命令含凭据，不要公开。成功后命令会清理临时入网文件，失败时请保护该文件并在排错结束后删除。</li>
-     <li><strong>检查并启用。</strong>安装显示成功后，在节点机执行 <code>sudo systemctl status filepanel-node</code>。回主面板点击“刷新节点”，找到新节点并点击“检查面板到节点”；如需存文件，勾选“存储文件”并保存；如需给访客提供出口，勾选“提供下载线路”并保存。上传一个小测试文件到节点，再从访客网络检查下载；控制连接在线不代表整条下载路径已通过。</li>
+     <li><strong>检查并启用。</strong>安装显示成功后，在节点机执行 <code>sudo systemctl status filepanel-node</code>，确认 active (running)。回主面板点击“刷新节点”，找到新节点并点击“检查面板到节点”，确认控制连接在线且面板→节点的 TLS 与身份检查通过；未通过先查看卡片错误。按需求勾选“存储文件”或“提供下载线路”，点击“保存节点设置”。</li>
+     <li><strong>实际验证。</strong>在“我的文件”的“上传存储位置”选择节点，上传一个小测试文件并等待“已完成”。开启分享后，用其他网络打开分享页并实际下载、比对文件内容；若要验证节点直出，还要在分享设置中指定该出口。只有控制连接在线不足以证明访客下载成功。</li>
     </ol>
-    <p>这只是独立公网 Ubuntu 的一种具体做法。Alpine / OpenRC、共享公网 IP、只有 NAT 高位端口或自签名证书时，配置方式不同；此时先根据实际端口和证书准备 HTTPS 入口，再按面板提示填写 CA，不能把上面的端口和域名直接照抄。已有节点无需重复安装。</p>
+    <p><strong>字段核对：</strong><code>panel</code> 是节点访问主面板的地址，<code>ca</code> 用于节点信任主面板的私有 CA；<code>endpoint</code> 是主面板访问节点的 HTTPS 地址，<code>node_ca</code> 用于主面板信任节点的私有 CA。公网可信证书对应的 CA 可留空；私有 CA 需要正确的 PEM 和匹配的证书名称。手动修改 JSON 中的 PEM 时，换行必须编码为 <code>\n</code>，不能直接把多行文本粘进 JSON 字符串；不要分享包含票据的文件。<code>127.0.0.1:8081</code> 是节点机内部监听，不是其他机器访问的地址。已有节点无需重复安装。</p>
     <p><a href="https://caddyserver.com/docs/quick-starts/reverse-proxy" target="_blank" rel="noopener noreferrer">Caddy 官方反向代理说明</a></p>
    </details>
-   <details open><summary>如何保存多个副本，或只保留一个位置？</summary>
+   <details id="help-storage"><summary>如何保存多个副本，或只保留一个位置？</summary>
+    <p><strong>开始前：</strong>确认目标节点在线、有可用磁盘，并保留需要的数据备份。复制和移动会经过预检与校验，可能消耗各机器的磁盘和流量。</p>
     <ol><li>在文件旁选择“更多 → 存储与副本”，查看主位置和已校验副本。</li><li>在“新增副本位置”选择服务器，点击“复制并保留原件”。等待存储任务完成；新副本完成校验后才能使用。</li><li>要只保留一处，在其他非主位置点击“移除这个副本”，确认后查看清理任务。主位置始终保留；需要改变主位置时，在“更多”中选择“移动”。</li></ol>
-    <p>移动到已有副本的位置可复用已校验副本，无需重新传输；以存储任务显示的结果为准。移动、复制或清理遇到故障时，可在存储任务中查看状态和可用的重试操作。</p>
+    <p><strong>完成与排错：</strong>在文件页的“文件存储任务”查看“完成”和实际路径，再打开“存储与副本”核对位置。移动到已有副本的位置可复用已校验副本，无需重新传输；移除副本可能等待已有下载完成或离线节点恢复。失败时先查看任务错误、节点状态和空间，再使用页面提供的“重试 / 继续清理”；不要在服务器手动删除对象。</p>
    </details>
    <details><summary>存储位置和下载／中转出口有什么区别？</summary>
     <p>存储位置决定文件副本放在哪台机器；下载出口决定访客从哪台机器接收数据。出口可以读取本机副本，也可以从存储服务器中转，因此只存一份也可配置其他可用出口，中转会消耗相关机器的流量。</p>
     <ol><li>先在“设置 → 节点与线路”配置并启用需要的出口，确认节点连接状态。</li><li>打开文件的“分享”，在“下载线路”选择使用所有已启用出口，或手动指定并勾选需要的服务器。</li><li>保存分享设置并打开分享页面，检查按实际出口地区显示的下载按钮；实际可用性仍需从访客网络测试。</li></ol>
    </details>
    <button class="quiet-btn" data-go="settings-nodes">前往节点与线路</button>
+   <button class="quiet-btn" type="button" data-help-target="help-directory">返回帮助目录</button>
   </div></section>
   <section class="section-card"><div class="setting-form">
    <h2>访问、用量与常见问题</h2>
-   <details open><summary>如何给主面板绑定域名，让访客从外网访问？</summary>
+   <details id="help-domain"><summary>如何给主面板绑定域名，让访客从外网访问？</summary>
+    <p><strong>适用：</strong>需要用域名访问已经安装好的主面板。准备域名 DNS 管理权限、主面板公网入口和当前可用的后台登录地址；仅有 NAT 高位端口或已有代理时，先确认映射和代理方案。此操作是可选的，单机上传与分享不要求绑定域名。</p>
     <ol><li><strong>准备域名和公网入口。</strong>在域名注册商购买域名，或使用已有域名的一个子域名，例如 <code>files.example.com</code>。到主面板服务器服务商控制台查公网 IPv4 / IPv6、允许的外部端口及 NAT 映射；先保留目前能登录的入口。</li>
     <li><strong>添加 DNS 解析。</strong>在该域名的 DNS 托管平台新增 A 记录，把子域名指向主面板公网 IPv4；有可用公网 IPv6 时可另加 AAAA 记录。主机记录应按托管平台的填写规则输入，通常 <code>files</code> 对应 <code>files.example.com</code>。等待解析生效；没有公网 IPv6 时不要添加错误的 AAAA 记录。</li>
     <li><strong>选择 HTTPS 方式。</strong>自动申请证书需要该域名的公网 80 和 443 端口可达，且监听端口没有被其他服务占用；同时检查云安全组和系统防火墙。若已有 Nginx / Caddy 等代理，先在代理上配置域名、证书及转发到 FilePanel，再选择已有 HTTPS 代理。只有映射端口或 80 / 443 不可用时，不要假设自动证书可以成功，需使用已有可用代理或其他实际可达入口。</li>
+    <li><strong>核对面板监听。</strong>安装实例默认自动 HTTPS 监听本机 <code>127.0.0.1:8082</code>（验证）和 <code>127.0.0.1:8443</code>（TLS），公网 80／443 需要实际转发到相应监听端口；安装时配置了低端口权限的实例可直接监听 80／443。打开“设置 → 访问地址”中的“详细运行环境”查看当前监听，按自己的安装和映射配置核对，避免占用现有服务。</li>
     <li><strong>在面板检查并启用。</strong>打开“设置 → 访问地址”，选择对应模式，在“完整访问地址”填入实际网址，例如 <code>https://files.example.com</code>；根据实际情况填写公网 IP、外部端口，以及是否使用 Cloudflare 等 DNS 代理。自动证书模式按页面提示填写邮箱并同意条款。</li>
     <li>点击“检查候选地址”，查看下方诊断和 DNS／反代指导，处理失败或待验证项后重新检查；可用时点击“验证并启用”。等页面显示已启用，再用另一网络打开后台及分享链接测试。检查或启用失败时，原入口保留。</li></ol>
+    <p><strong>完成标准：</strong>面板显示已启用，并在其他网络通过域名打开后台、分享页和实际下载。失败时检查下方“域名、端口或证书”排错，保留当前可用入口；检查结果为“待验证”不等于公网已通过。</p>
     <p>更换主域名可能改变以后生成的分享链接域名；要让旧域名继续可用，需要自行保留旧 DNS、证书和必要的跳转。使用代理时，证书由代理维护；FilePanel 不会替你修改现有代理或 DNS。</p>
     <button class="quiet-btn" data-go="settings-access">配置访问地址</button>
    </details>
-   <details><summary>别人打不开分享链接怎么办？</summary>
-    <ol><li>确认文件仍处于私密或公开分享状态，并复制保存后的链接；取消分享会使原页面和下载授权失效。</li><li>如果地址含 localhost、127.0.0.1 或内网地址，其他网络通常无法访问。进入“设置 → 访问地址”，按实际公网地址、端口或域名填写并检查。</li><li>检查服务商防火墙、NAT 映射和反向代理，再用其他网络测试。面板显示节点控制连接在线，不等于访客到下载出口的路径一定可用。</li></ol>
-    <button class="quiet-btn" data-go="settings-access">配置访问地址</button>
-   </details>
-   <details><summary>下载受限、文件暂不可用或流量数值不一致？</summary>
-    <p>先查看“用量与状态”的保护提示和“设置 → 节点与线路”的状态。达到保护线后需等待下一统计周期，或按真实套餐修正额度；不要为了排错随意关闭保护。网络失败时可重新打开分享页获取下载地址。</p>
-    <p>磁盘容量是存放文件所需空间，流量是传输的数据量。FilePanel 统计本应用内容流，不等于整机网卡流量或服务商账单；流量周期按 UTC 时间计算。</p>
-    <button class="quiet-btn" data-go="settings-protection">设置流量保护</button>
-   </details>
-   <details><summary>如何修改密码、备份和更新？</summary>
-    <p>在“设置 → 账号安全”输入当前密码和新密码；修改后所有设备需要重新登录。忘记密码、整站备份与恢复需要服务器管理员处理，不要删除数据目录重新初始化。外观配置包只保存外观，不是整站备份；更新前请查看维护页面的备份说明。</p>
+   <details id="help-maintenance"><summary>如何修改密码、备份和更新？</summary>
+    <p>在“设置 → 账号安全”输入当前密码和新密码；修改后所有设备需要重新登录。忘记密码需要服务器管理员处理，不要删除数据目录重新初始化，也不要公开密码。</p>
+    <p><strong>更新前：</strong>查看“设置 → 更新与维护”的版本与检查结果；准备足够空间和可验证的一致性备份。面板备份包含本机文件、素材和数据库，但不包含远端节点上的正式文件；远端数据需要分别备份。外观配置包不是整站备份，节点迁移包也不包含本机文件、图片素材或 HTTPS 私钥。备份含敏感信息，限制权限并妥善保存迁移包密码。</p>
+    <p><strong>备份示例：</strong>在面板服务器终端执行以下命令，适用于实例名为 <code>main</code> 的已安装面板；其他实例须替换程序路径与实例名。先准备 root 控制、非数据目录内的备份父目录，目标子目录必须不存在，并确保有足够空间。完成后第二条命令检查备份；将验证通过的备份另存到安全位置，不能公开。</p>
+    <pre><code>sudo /opt/filepanel-main/filepanel maintain --instance main --action backup --backup-path /root/backups/site-before-update
+sudo /opt/filepanel-main/filepanel backup verify --path /root/backups/site-before-update</code></pre>
+    <p><strong>恢复与迁移：</strong>恢复会回到选定备份时的文件名、分享授权、账号和密钥状态，可能丢失之后的变更；先另存当前状态，确认实例身份、备份时点和兼容性，再由服务器管理员执行并验证下载。迁移节点身份前先导出加密迁移包并保存密码，切换时停止旧面板，不要同时运行相同身份的两台面板。更新或恢复可能短暂停止服务，失败时保留现场和备份，不要直接删除数据目录。</p>
+    <p>确认需要恢复且已验证备份后，在面板服务器执行下例；路径需换成选定的备份目录，实例身份必须与备份匹配。该命令会切换数据，请不要用它仅仅测试命令是否可运行。</p>
+    <pre><code>sudo /opt/filepanel-main/filepanel maintain --instance main --action restore --backup-path /root/backups/site-before-update</code></pre>
+    <p><strong>完成标准：</strong>更新后检查服务与版本，再确认登录、原有文件和实际下载；恢复后另核对分享状态、节点连接和远端文件。服务或文件异常时停止继续修改，先检查维护状态并使用已验证的备份恢复。</p>
     <button class="quiet-btn" data-go="settings-maintenance">查看更新与维护</button>
+    <button class="quiet-btn" data-go="settings-account">修改密码</button>
    </details>
    <details><summary>常见术语：SHA-256、DNS、NAT 和 HTTPS</summary>
     <p>SHA-256 是文件校验码，可用于比对下载是否完整；普通下载无需输入。DNS 将域名指向服务器地址；NAT 端口映射将外部端口转到服务器内部端口。HTTPS 加密浏览器与服务器之间的连接，证书用于验证服务器身份。公网地址和映射端口以服务商控制台的实际配置为准。</p>
    </details>
+   <button class="quiet-btn" type="button" data-help-target="help-troubleshooting">查看常见问题排查</button>
+   <button class="quiet-btn" type="button" data-help-target="help-directory">返回帮助目录</button>
+  </div></section>
+  <section class="section-card"><div class="setting-form" id="help-troubleshooting" tabindex="-1">
+   <h2>排查常见问题</h2>
+   <p>从现象出发，逐层核对 DNS → 公网端口 → TLS → 代理 → 后端 → 实际下载。某一层失败时先处理该层；不要关闭证书校验或删除数据来试错。</p>
+   <details><summary>域名解析错误、只能本机访问或外部端口超时</summary>
+    <p><strong>可能原因：</strong>DNS 指向错误 IP、内网监听、NAT 映射错误，或云安全组／系统防火墙拦截。</p>
+    <p><strong>检查：</strong>在电脑或另一台服务器执行 <code>nslookup files.example.com</code>，将 A／AAAA 结果与服务商提供的公网入口比较；代理开启时返回代理 IP，需同时核对 DNS 源站及代理设置。在对应服务器执行 <code>sudo ss -lntp</code>，检查服务监听地址与内部端口；到服务商控制台逐项核对公网端口→内部地址和端口的映射及安全组，再检查系统防火墙。<code>127.0.0.1</code> 只供本机访问，必须有实际代理或隧道入口。</p>
+    <p><strong>处理与复验：</strong>按实际情况修正 DNS、映射或放行规则，保留 SSH 和现有站点入口；等待 DNS 生效后从不同网络访问真实网址及端口。服务器本机监听正常不等于公网连通。Cloudflare 橙云异常时，先核对代理支持的端口、源站和证书；是否切换为仅 DNS 需结合已有服务影响判断。</p>
+   </details>
+   <details><summary>HTTPS 证书申请失败或域名不匹配</summary>
+    <p><strong>可能原因：</strong>DNS 指向错误、HTTP-01 验证路径被挡、80／443 不通、代理证书配置或域名不匹配；仅凭一种报错不能确定根因。</p>
+    <p><strong>检查与复验：</strong>先按上一条核对 DNS 与端口。在访问方机器执行 <code>curl -Iv https://files.example.com</code>（换成实际域名和端口），查看 TLS 验证和证书名称，不能使用 <code>-k</code> 跳过验证。主面板自动 HTTPS 查看“设置 → 访问地址”的检查与证书状态；由 Caddy 或其他代理终止 TLS 时，到代理服务器查看证书和日志。修正后重新检查并从另一网络访问；未完成验证前保留旧入口。</p>
+   </details>
+   <details><summary>Caddy 配置错误、端口占用、启动失败或返回 502</summary>
+    <p><strong>适用：</strong>Ubuntu/systemd 且节点入口使用 Caddy。端口冲突、配置语法错误、证书失败、上游未启动或地址写错均可能造成问题。</p>
+    <p><strong>在节点机检查：</strong><code>sudo ss -lntp</code> 查看 80、443 和 8081 监听；<code>sudo caddy validate --config /etc/caddy/Caddyfile</code> 检查语法；<code>sudo systemctl status caddy</code> 和 <code>sudo journalctl -u caddy -n 50 --no-pager</code> 查看服务与日志。502 表示代理未能正常获得上游响应，常见原因是节点服务未启动或代理目标错误；节点安装前的 502 不能作为节点已接入的证明。</p>
+    <p><strong>处理与复验：</strong>确认现有服务归属后修正配置或上游，不要直接终止未知进程；验证配置后再重载。节点安装后检查 <code>sudo systemctl status filepanel-node</code>，从主面板所在机器再次访问节点 HTTPS，并在节点卡片执行“检查面板到节点”。证书申请／续期失败时查看日志并按上一条检查 DNS 和公网端口。</p>
+   </details>
+   <details><summary>节点离线、接入命令失败、服务未运行或面板无法连接</summary>
+    <p><strong>可能原因：</strong>票据过期或已使用、命令字段错误、节点到面板的连接／信任失败、安装失败，或面板到节点的 HTTPS 路径不通。</p>
+    <p><strong>检查：</strong>在节点机确认命令完整、<code>panel</code> 指向主面板、<code>endpoint</code> 指向节点，私有 CA 与证书匹配；票据超过 5 分钟或已经使用则重新生成，不要公开命令。Ubuntu/systemd 上用 <code>sudo systemctl status filepanel-node</code> 和 <code>sudo journalctl -u filepanel-node -n 50 --no-pager</code> 查看服务；其他系统按实际服务管理方式检查。安装失败可能保留实例配置和数据，修正后按原配置重试，不要直接清空目录。</p>
+    <p><strong>复验：</strong>在节点机检查到面板的 HTTPS；在面板机检查到节点的 HTTPS、证书名和映射端口，再在“设置 → 节点与线路”刷新并点击“检查面板到节点”。卡片同时显示控制连接和面板→节点检查，两者都应核对。</p>
+   </details>
+   <details><summary>节点在线但访客无法下载，或副本／校验任务失败</summary>
+    <p><strong>可能原因：</strong>源副本不可用、任务尚未完成、出口未启用或未允许、出口到存储不通、访客到出口不通，也可能是流量保护触发。</p>
+    <p><strong>检查与处理：</strong>确认分享没有取消，保存设置后重新复制链接；取消分享会使原页面和下载授权失效。在“我的文件”查看存储任务阶段、错误和“更多 → 存储与副本”；确认存在已校验可用副本，失败时检查节点在线、空间并按页面提示重试。检查分享设置中的下载线路、节点的“提供下载线路”及用量保护。控制连接在线不证明出口→存储或访客→出口畅通。</p>
+    <p><strong>复验：</strong>保存配置后从实际访客网络打开分享页面，逐一测试允许的下载按钮并核对下载文件；某条线路失败时查看该出口与源节点的连接及额度，不要删除唯一副本。</p>
+   </details>
+   <details><summary>流量保护触发，或统计与服务商账单不同</summary>
+    <p><strong>可能原因：</strong>达到保护线、周期和计费口径不同，或服务商还计入其他应用及网络开销。磁盘容量用于存放文件，流量是传输的数据量；FilePanel 的应用内容流统计不等于整机网卡流量或服务商账单。</p>
+    <p><strong>检查与复验：</strong>在“用量与状态”查看保护状态及周期，在“设置 → 流量保护”核对真实套餐额度、仅发送／收发合计和 UTC 重置日；多机每跳分别计量，不能相加当作访客净下载量。达到保护线可等待下一周期或按真实套餐修正配置，保存后重新查看状态并实际下载；不要为了排错随意关闭保护。</p>
+    <button class="quiet-btn" data-go="settings-protection">设置流量保护</button>
+   </details>
+   <button class="quiet-btn" type="button" data-help-target="help-directory">返回帮助目录</button>
   </div></section>
  </div>
  <div id="page-settings" class="hidden"><div class="heading"><div><h1>设置</h1><p>按用途选择分区；切换分区会保留未保存的输入，刷新或关闭页面前请保存。</p></div></div><nav id="settings-nav" class="settings-nav" aria-label="设置分区"><button data-settings="appearance">站点外观</button><button data-settings="access">访问地址</button><button data-settings="protection">流量保护</button><button data-settings="nodes">节点与线路</button><button data-settings="account">账号安全</button><button data-settings="maintenance">更新与维护</button></nav><div id="settings-appearance" class="settings-pane"></div><div id="settings-access" class="settings-pane hidden"></div><div id="settings-protection" class="settings-pane hidden"></div><div id="settings-nodes" class="settings-pane hidden"></div><div id="settings-account" class="settings-pane hidden"><section class="section-card"><div class="section-head"><div><div class="section-title">修改管理员密码</div><div class="section-sub">修改后，所有已登录设备都需要重新登录。</div></div></div><form class="setting-form" id="password-form"><div class="field"><label for="current-password">当前密码</label><input id="current-password" type="password" autocomplete="current-password" required></div><div class="field"><label for="next-password">新密码（12–72 字节，建议至少 12 个英文字符）</label><input id="next-password" type="password" minlength="12" autocomplete="new-password" required></div><button type="submit" class="primary-btn">更新密码</button></form></section></div><div id="settings-maintenance" class="settings-pane hidden"></div></div>
